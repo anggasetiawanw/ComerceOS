@@ -1,0 +1,35 @@
+import { z } from 'zod';
+
+export const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().int().positive().default(3001),
+
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DIRECT_DATABASE_URL: z.string().min(1, 'DIRECT_DATABASE_URL is required'),
+
+  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+
+  SUPABASE_URL: z.string().optional().default(''),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default(''),
+  SUPABASE_BUCKET_PUBLIC: z.string().optional().default(''),
+  SUPABASE_BUCKET_PRIVATE: z.string().optional().default(''),
+
+  CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  FRONTEND_URL: z.string().default('http://localhost:3000'),
+
+  SWAGGER_USER: z.string().optional().default(''),
+  SWAGGER_PASSWORD: z.string().optional().default(''),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+export const validateEnv = (config: Record<string, unknown>): Env => {
+  const parsed = envSchema.safeParse(config);
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  return parsed.data satisfies Env;
+};
