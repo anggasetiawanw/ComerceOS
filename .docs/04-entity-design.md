@@ -19,25 +19,33 @@ Shared kernel value objects — available everywhere, defined once in `shared/ke
 
 ## 1. Identity — Tier 2
 
+Per [AD-13](./README.md#decision-log) and [07 §1a–1b](./07-auth.md#1a-email--password-registration-and-login),
+`User` supports two login methods — Google and email/password — either or both present on the same row.
+
 | Element | Detail |
 |---|---|
 | **Aggregate** | `User` — root |
 | **Entities** | `RefreshToken` (inside the `User` aggregate; a token cannot exist without its user) |
-| **Value objects** | `Email`, `Phone`, `UserRole` (`buyer`/`seller`/`admin`), `GoogleId`, `TokenFamily` |
-| **Repositories** | `UserRepository` — `findById`, `findByGoogleId`, `findByEmail`, `save`; `RefreshTokenRepository` — `findByHash`, `revokeFamily`, `save`, `pruneExpired` |
-| **Domain services** | `TokenRotationService` — issues a new refresh token, revokes the predecessor, detects reuse of an already-rotated token and kills the whole family |
-| **Factories** | `User.registerFromGoogle(profile)` — the only construction path; enforces that a user always has a verified email |
-| **Domain events** | `UserRegistered`, `UserProfileCompleted`, `RefreshTokenReuseDetected` |
+| **Value objects** | `Email`, `Phone`, `UserRole` (`buyer`/`seller`/`admin`), `GoogleId`, `PasswordHash` (Argon2id, `verify(plain): boolean`), `TokenFamily` |
+| **Repositories** | `UserRepository` — `findById`, `findByGoogleId`, `findByEmail`, `save`; `RefreshTokenRepository` — `findByHash`, `revokeFamily`, `save`, `pruneExpired`; `VerificationTokenRepository` — `findByHash`, `save`, `markUsed`, `invalidateOutstanding(userId, purpose)` |
+| **Domain services** | `TokenRotationService` — issues a new refresh token, revokes the predecessor, detects reuse of an already-rotated token and kills the whole family; `AccountLinkingService` — enforces that linking/unlinking only ever happens from an authenticated action and that a user always retains at least one login method |
+| **Factories** | `User.registerFromGoogle(profile)` and `User.registerWithPassword(email, passwordHash)` — the only two construction paths; both enforce that a user always ends up with a verified email (immediately for Google, after `/auth/verify-email` for password) |
+| **Domain events** | `UserRegistered`, `UserRegisteredWithPassword`, `EmailVerified`, `GoogleAccountLinked`, `PasswordSet`, `PasswordResetRequested`, `PasswordChanged`, `UserProfileCompleted`, `RefreshTokenReuseDetected` |
 | **Application services** | `AuthService`, `UserProfileService` |
-| **Commands** | `LoginWithGoogle`, `RefreshAccessToken`, `Logout`, `LogoutAllSessions`, `UpdateProfile`, `CompleteProfile` |
+| **Commands** | `LoginWithGoogle`, `RegisterWithPassword`, `LoginWithPassword`, `VerifyEmail`, `RequestPasswordReset`, `ResetPassword`, `LinkGoogleAccount`, `SetPassword`, `UnlinkGoogleAccount`, `RefreshAccessToken`, `Logout`, `LogoutAllSessions`, `UpdateProfile`, `CompleteProfile` |
 | **Queries** | `GetCurrentUser`, `ListActiveSessions` |
-| **DTOs** | `GoogleCallbackDto`, `RefreshTokenDto`, `UpdateProfileDto`, `AuthTokensResponseDto`, `UserResponseDto` |
+| **DTOs** | `GoogleCallbackDto`, `RegisterDto`, `LoginDto`, `VerifyEmailDto`, `ForgotPasswordDto`, `ResetPasswordDto`, `RefreshTokenDto`, `UpdateProfileDto`, `AuthTokensResponseDto`, `UserResponseDto` |
 | **Controllers** | `AuthController` (`/auth/*`), `UsersController` (`/users/me`) |
 
 **Design note.** `RefreshToken` sits inside the `User` aggregate rather than standing alone because
 reuse detection is an invariant *across a user's tokens* — revoking a family requires knowing all of
 them. Modelling tokens as an independent root would push that rule into a service and make the
 revocation race hard to reason about.
+
+**Design note.** `VerificationToken` (email verification + password reset) is modelled as its own
+repository rather than nested in `User`, unlike `RefreshToken` — there is no cross-token invariant to
+enforce (each token is checked independently against its own hash and expiry), so the aggregate-boundary
+cost of nesting it buys nothing.
 
 ---
 

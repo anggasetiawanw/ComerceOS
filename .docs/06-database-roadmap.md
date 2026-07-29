@@ -14,7 +14,7 @@ that any one can be reviewed, and so the sequence maps onto the sprint plan.
 | # | Migration | Tables | Depends on | Sprint |
 |---|---|---|---|---|
 | 001 | `init_extensions` | `pgcrypto`, `citext` | — | 1 |
-| 002 | `identity` | `users`, `refresh_tokens` | 001 | 2 |
+| 002 | `identity` | `users`, `refresh_tokens`, `verification_tokens` | 001 | 2 |
 | 003 | `store` | `stores`, `social_links` | 002 | 3 |
 | 004 | `catalog` | `products`, `digital_files` | 003 | 4 |
 | 005 | `ordering` | `orders`, `order_items`, `order_status_history` | 004 | 5 |
@@ -222,7 +222,34 @@ Gapless per-store invoice numbering ([04 §7](./04-entity-design.md#7-invoicing-
 that increments under a row lock inside the invoice transaction. `COUNT(*) + 1` races; a global sequence
 leaks total platform volume to every seller who reads their own invoice number.
 
-### 2.15 Summary
+### 2.15 Password authentication — new columns + table
+
+[AD-13](./README.md#decision-log) adds email/password as a second login method alongside Google
+([07 §1a–1b](./07-auth.md#1a-email--password-registration-and-login)). `users` gains:
+
+| Column | Type | Notes |
+|---|---|---|
+| `google_id` | text, unique, **nullable** | Was implicitly required; now optional since a user may authenticate by password only |
+| `password_hash` | text, nullable | Argon2id hash. Null for Google-only accounts |
+| `email_verified_at` | timestamptz, nullable | Set immediately for Google accounts; set by `/auth/verify-email` for password accounts |
+
+`CHECK (google_id IS NOT NULL OR password_hash IS NOT NULL)` — a user must always retain at least one
+login method. This is also what makes `DELETE /auth/google/unlink` safe to gate on `password_hash`
+already being set.
+
+New table, mirroring the existing hash-at-rest pattern used by `refresh_tokens`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid pk | |
+| `user_id` | uuid fk → users | |
+| `token_hash` | text, unique | SHA-256 of the emailed token, never store the raw value |
+| `purpose` | enum(`email_verification`,`password_reset`) | |
+| `expires_at` | timestamptz | 24h for verification, 1h for reset |
+| `used_at` | timestamptz null | Single-use |
+| `created_at` | timestamptz | |
+
+### 2.16 Summary
 
 | # | Amendment | Type | Migration |
 |---|---|---|---|
@@ -240,6 +267,7 @@ leaks total platform volume to every seller who reads their own invoice number.
 | 12 | `idempotency_keys` | New table | 011 |
 | 13 | Money as `bigint` | Type change | all |
 | 14 | `stores.invoice_counter` | New column | 003 |
+| 15 | Password auth: `users.password_hash`/`email_verified_at`, nullable `google_id`, `verification_tokens` | New columns + table | 002 |
 
 ---
 
@@ -261,6 +289,7 @@ CREATE UNIQUE INDEX ON subscriptions (store_id) WHERE status IN ('active','trial
 CREATE UNIQUE INDEX ON bank_accounts (store_id) WHERE is_default;
 CREATE UNIQUE INDEX ON idempotency_keys (key, user_id);
 CREATE UNIQUE INDEX ON refresh_tokens (token_hash);
+CREATE UNIQUE INDEX ON verification_tokens (token_hash);
 ```
 
 ### Access paths
@@ -290,6 +319,7 @@ CREATE UNIQUE INDEX ON refresh_tokens (token_hash);
 | `audit_logs (actor_id, created_at DESC)` | Actor audit trail |
 | `withdrawals (status, requested_at)` | Admin queue |
 | `notification_deliveries (status, created_at) WHERE status = 'failed'` | Retry scan |
+| `verification_tokens (user_id, purpose)` | Invalidate outstanding tokens when a new one is issued |
 
 **Partial indexes wherever a job scans a minority state.** The release scheduler runs every few minutes
 forever; an index covering only `holding` rows stays small permanently, while a full index on
@@ -297,7 +327,7 @@ forever; an index covering only `holding` rows stays small permanently, while a 
 
 ### Deliberately not indexed
 
-- `users.phone` — no lookup path by phone; login is by Google
+- `users.phone` — no lookup path by phone; login is by Google or email/password, never phone
 - `order_items.hpp_snapshot` — aggregated, never filtered
 - Any single-column index on a low-cardinality enum alone — always paired with a discriminating column
 
@@ -334,6 +364,9 @@ ALTER TABLE promotions ADD CHECK (type <> 'percent' OR (value > 0 AND value <= 1
 
 -- Delivery
 ALTER TABLE digital_deliveries ADD CHECK (download_count >= 0 AND download_count <= max_downloads);
+
+-- Identity: a user must always retain at least one login method
+ALTER TABLE users ADD CHECK (google_id IS NOT NULL OR password_hash IS NOT NULL);
 ```
 
 **Foreign key delete behavior:**

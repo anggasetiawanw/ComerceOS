@@ -85,6 +85,7 @@ and are treated here as given.
 | AD-10 | **Notification channels behind a port** | WA provider choice (Fonnte/Wablas vs official WABA) is a ToS and cost bet that will change; the domain must not know which one is wired | [10 §3](./10-background-jobs.md#3-notifications) |
 | AD-11 | **Server Components by default** on the frontend | Storefront SEO and first-paint are a growth lever; client state is the exception, not the default | [11 §1](./11-frontend.md#1-folder-structure) |
 | AD-12 | **Trunk-based with short-lived branches**, not Git Flow | Git Flow's release/hotfix branches are overhead a solo developer pays for and never uses | [13 §1](./13-devops-testing-prod.md#1-git-strategy) |
+| AD-13 | **Dual auth: Google OAuth + email/password**, linked only via an explicit authenticated action | Google-only signup risks losing sellers without a Google account; password support fixes that without reopening the account-takeover risk of silent email-based merging | [07 §1a](./07-auth.md#1a-email--password-registration-and-login) |
 
 ---
 

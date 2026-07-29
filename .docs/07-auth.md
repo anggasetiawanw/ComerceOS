@@ -1,14 +1,17 @@
 # 07 — Authentication & Authorization
 
-Google is the **only** login method, per the decision recorded in `summary.md` §8 (WA OTP was considered
-and dropped). No passwords, no magic links, no OTP.
+Google was originally the **only** login method, per the decision recorded in `summary.md` §8 (WA OTP was
+considered and dropped). That held while it kept signup frictionless and avoided all password-storage
+obligations, but it made the product fully dependent on Google availability and unusable for any
+Indonesian seller without a Google account — a real conversion risk the original design flagged as
+"worth revisiting if signup conversion disappoints."
 
-Two consequences worth stating up front. First, there is no password reset, no credential stuffing
-surface, and no password storage obligation — a large amount of security work simply does not exist.
-Second, we are fully dependent on Google availability, and any Indonesian seller without a Google
-account cannot use the product. That second point is a real product risk and is worth revisiting if
-signup conversion disappoints; the architecture keeps it cheap to add a provider because everything
-downstream of `UserRegistered` is provider-agnostic.
+**Amendment ([AD-13](./README.md#decision-log)):** email + password is now a first-class second login
+method, alongside Google. A `users` row may have a `google_id`, a `password_hash`, or both — never
+neither. The two methods can be linked together, but only through an explicit authenticated action
+(§1b), never implicitly during login or registration. Everything downstream of `UserRegistered` remains
+provider-agnostic, which is what makes this addition cheap: nothing in Store, Catalog, Ordering, or the
+ledger changes.
 
 ---
 
@@ -67,6 +70,86 @@ the phone number is a substantial part of a buyer record's value to the seller (
 
 It is deliberately **not** required at login. Demanding a phone number before someone has seen the
 product costs signups. The gate sits at checkout, where intent already exists.
+
+---
+
+## 1a. Email & password registration and login
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as NestJS API
+    participant E as Email (Resend)
+
+    B->>A: POST /auth/register {email, password, name}
+    A->>A: Hash password (Argon2id), create user, email_verified_at = null
+    A->>E: Send verification email (token_hash in verification_tokens)
+    A-->>B: 201, "check your email"
+    B->>A: POST /auth/verify-email {token}
+    A->>A: Match token_hash, set email_verified_at, mark token used
+    A-->>B: 200
+    B->>A: POST /auth/login {email, password}
+    A->>A: Verify hash, reject if email_verified_at is null
+    A-->>B: Issue access + refresh token pair, same as Google
+```
+
+### Registration
+
+- Password hashed with **Argon2id**, never logged, never stored or transmitted in plaintext beyond the
+  request body
+- Minimum length 8 characters. No forced complexity rules (uppercase/symbol requirements) — length is
+  the property that actually resists brute force; composition rules mostly push users toward predictable
+  substitutions
+- `POST /auth/register` never reveals whether an email is already registered as a *Google* account —
+  the existing `google_id`-first-then-conflict model already handles that; a password-registration
+  attempt against an existing Google-only email is rejected with "sign in with Google instead," logged
+  the same way as any other collision
+
+### Email verification
+
+- Required before login succeeds. A registered-but-unverified user exists in `users` but every
+  `/auth/login` attempt is rejected until `email_verified_at` is set — this preserves the same
+  "every transaction = one verified contact" guarantee Google's `email_verified` claim already gives us
+  ([00 §1](./00-product-analysis.md#1-business-goals))
+- Verification tokens: random, hashed (SHA-256) at rest in `verification_tokens`, single-use, 24h expiry
+- Google-provisioned or Google-linked accounts are considered verified immediately; Google has already
+  done this work
+
+### Forgot / reset password
+
+- `POST /auth/forgot-password` always responds `200`, whether or not the email is registered or has a
+  password set — this is the standard defense against account enumeration
+- Reset tokens: same hashing/single-use scheme as verification tokens, 1h expiry
+- `POST /auth/reset-password` sets the new hash and **revokes every refresh token family for that user**,
+  killing all existing sessions — a password reset is exactly the moment an attacker might also be
+  holding a valid session
+
+---
+
+## 1b. Account linking
+
+Linking (adding Google to a password account, or adding a password to a Google-only account) happens
+**only from an authenticated settings action** — `POST /auth/google/link` or `POST /auth/set-password`,
+both requiring `JwtAuthGuard`. It never happens implicitly during login or registration, even when the
+email addresses match exactly.
+
+This is the same rule §1 already states for Google `google_id` collisions — "silent email-based merging
+is a well-known account takeover vector" — applied symmetrically to the new provider combination. In
+concrete terms:
+
+- Google callback finds an email that already belongs to a password-only account with no `google_id`:
+  **do not** log the caller in and **do not** create a duplicate account. Respond with an error directing
+  them to sign in with their password and connect Google from settings
+- `POST /auth/register` targets an email that already belongs to a Google-only account: reject with the
+  same "sign in with Google instead" message; adding a password to that account happens later, from
+  settings, once authenticated
+- `DELETE /auth/google/unlink` is only permitted when `password_hash` is already set — a user must always
+  retain at least one way back into their account, enforced by the same
+  `CHECK (google_id IS NOT NULL OR password_hash IS NOT NULL)` constraint the database carries
+  ([06 §2](./06-database-roadmap.md#2-schema-amendments))
+
+The linking UI itself ships with `/dashboard/pengaturan` in Sprint 3; the backend endpoints land in
+Sprint 2 alongside everything else in this document.
 
 ---
 
@@ -253,9 +336,19 @@ regardless. Cheap check at the edge, real check at the API.
 - [ ] Reuse detection revokes the family
 - [ ] Refresh cookie `httpOnly` + `Secure` + `SameSite=Lax`
 - [ ] Access token lifetime ≤ 15 minutes
-- [ ] Rate limit on `/auth/*` — 10 req/min per IP
+- [ ] Rate limit on `/auth/*` — 10 req/min per IP, tightened to ~5 req/min on `/auth/login`,
+      `/auth/register`, and `/auth/forgot-password`
 - [ ] Account matched by `google_id`, never by email
 - [ ] Email collision requires explicit confirmation, and is logged
+- [ ] Passwords hashed with Argon2id; never logged, never stored or returned in plaintext
+- [ ] Minimum password length 8; no forced composition rules
+- [ ] Email/password login rejected until `email_verified_at` is set
+- [ ] Verification and password-reset tokens hashed at rest, single-use, short expiry (24h / 1h)
+- [ ] Password reset revokes every refresh token family for the user
+- [ ] `/auth/forgot-password` never reveals whether an account exists
+- [ ] Google ⇄ password linking only from an authenticated settings action, never implicit during
+      login or registration
+- [ ] Unlinking Google requires `password_hash` already set on the account
 - [ ] `JwtAuthGuard` global with `@Public()` opt-out
 - [ ] `storeId` resolved from the token, never from the request body
 - [ ] Cross-tenant test suite in CI

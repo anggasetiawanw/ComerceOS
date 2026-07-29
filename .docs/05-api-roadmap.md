@@ -22,12 +22,24 @@ Priority column matches [01 §2](./01-feature-breakdown.md#2-prioritization).
 | Method | Path | Auth | Description | P |
 |---|---|---|---|---|
 | `GET` | `/auth/google` | — | Redirect to Google consent screen; carries `state` + optional `redirect_uri` | P0 |
-| `GET` | `/auth/google/callback` | — | Exchange authorization code, provision user, issue token pair | P0 |
+| `GET` | `/auth/google/callback` | — | Exchange authorization code, provision user, issue token pair. Rejects (no login, no duplicate) if the email already belongs to an unlinked password account, per [07 §1b](./07-auth.md#1b-account-linking) | P0 |
 | `POST` | `/auth/google/token` | — | Exchange a Google ID token directly (used by the web SDK flow) | P0 |
+| `POST` | `/auth/register` | — | Email + password + name; creates an unverified user and sends a verification email | P0 |
+| `POST` | `/auth/login` | — | Email + password; rejected until `email_verified_at` is set | P0 |
+| `POST` | `/auth/verify-email` | — | Consume a verification token, set `email_verified_at` | P0 |
+| `POST` | `/auth/verify-email/resend` | — | Re-send the verification email, rate-limited per email | P1 |
+| `POST` | `/auth/forgot-password` | — | Always `200`; sends a reset email only if the account exists and has a password | P0 |
+| `POST` | `/auth/reset-password` | — | Consume a reset token, set the new hash, revoke every refresh token family for the user | P0 |
+| `POST` | `/auth/google/link` | `U` | Link `google_id` to the current authenticated user | P0 |
+| `POST` | `/auth/set-password` | `U` | Add a password to a Google-only account | P1 |
+| `DELETE` | `/auth/google/unlink` | `U` | Unlink Google; requires `password_hash` already set | P2 |
 | `POST` | `/auth/refresh` | — | Rotate refresh token, issue new access token | P0 |
 | `POST` | `/auth/logout` | `U` | Revoke the presented refresh token | P0 |
 | `POST` | `/auth/logout-all` | `U` | Revoke every token family for the user | P2 |
 | `GET` | `/auth/sessions` | `U` | List active refresh-token families | P2 |
+
+`/auth/login`, `/auth/register`, and `/auth/forgot-password` carry a stricter throttle (~5 req/min per
+IP) than the default in [§17](#17-conventions).
 
 ## 2. Users — `/users`
 

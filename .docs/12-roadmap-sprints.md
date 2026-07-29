@@ -10,7 +10,7 @@ Every estimate below is against that capacity. Adjust proportionally for a diffe
 | M | Milestone | Sprints | Complexity | Outcome |
 |---|---|---|---|---|
 | **M0** | Foundation | 1 | Low | Repo, Docker, CI, config, health checks, Prisma bootstrap |
-| **M1** | Identity | 2 | Medium | Google OAuth, JWT + rotation, guards, profile |
+| **M1** | Identity | 2 | Medium | Google OAuth + email/password, account linking, JWT + rotation, guards, profile |
 | **M2** | Store & storefront | 3 | Medium | Store CRUD, username, public `/@username`, social links |
 | **M3** | Catalog | 4 | Medium | Products, images, digital files, storefront product pages |
 | **M4** | Transaction core | 5 | **High** | Checkout, orders, Midtrans, webhooks, outbox, digital delivery |
@@ -73,20 +73,25 @@ gantt
 ---
 
 ### Sprint 2 — Identity
-**Goal:** a user can sign in and stay signed in.
+**Goal:** a user can sign in and stay signed in, by Google or by email/password.
 
-- [ ] Migration 002: `users` (+ `role`), `refresh_tokens`
-- [ ] `User` aggregate, `Email`/`Phone`/`UserRole` VOs, `UserRepository` + mapper
+- [ ] Migration 002: `users` (+ `role`, `password_hash`, `email_verified_at`, nullable `google_id`), `refresh_tokens`, `verification_tokens` ([AD-13](./README.md#decision-log))
+- [ ] `User` aggregate, `Email`/`Phone`/`UserRole`/`PasswordHash` VOs, `UserRepository` + mapper
 - [ ] Google OAuth: authorize redirect, state in Redis, PKCE, callback, `id_token` verification
+- [ ] Email/password: register, Argon2id hashing, login, email verification, forgot/reset password ([07 §1a](./07-auth.md#1a-email--password-registration-and-login))
+- [ ] Minimal `EmailSender` (Resend) for verification + reset emails only — full `NotificationChannel` port stays Sprint 6
+- [ ] Account linking: `POST /auth/google/link`, `POST /auth/set-password`, `DELETE /auth/google/unlink` — explicit-authenticated-action only, never implicit ([07 §1b](./07-auth.md#1b-account-linking))
 - [ ] Token issuance: RS256 access (15m), opaque refresh (30d, hashed)
 - [ ] Rotation with family reuse detection
 - [ ] `JwtAuthGuard` global + `@Public()`, `RolesGuard`, `@CurrentUser()`
-- [ ] `/auth/*` and `/users/me` endpoints
-- [ ] Frontend: `/masuk`, `/callback`, `/lengkapi-profil`, token store, silent refresh, single-flight
+- [ ] `/auth/*` and `/users/me` endpoints, stricter rate limit on login/register/forgot-password
+- [ ] Frontend: `/masuk` (password form + Google button), `/daftar`, `/lupa-password`, `/reset-password`, `/callback`, `/lengkapi-profil`, token store, silent refresh, single-flight
 - [ ] Middleware protecting `/dashboard/*` and `/akun/*`
-- [ ] Tests: OAuth flow, rotation, reuse detection, guards
+- [ ] Tests: OAuth flow, password register/verify/login, forgot/reset, linking rules (both directions + retain-one-method invariant), rotation, reuse detection, guards
 
-**Deliverable:** sign in with Google, refresh across a reload, sign out.
+**Deliverable:** sign in with Google or with email/password, verify email, reset a forgotten password,
+refresh across a reload, sign out. Connecting a Google account from settings ships with Sprint 3's
+`/dashboard/pengaturan`.
 
 ---
 
@@ -279,8 +284,11 @@ balances.
 - [x] Health indicators: Postgres, Redis. Storage indicator deferred until the storage service exists
 
 **Identity**
-- [ ] `User` aggregate + `RefreshToken` entity + mapper
+- [ ] `User` aggregate + `RefreshToken` entity + `VerificationToken` repository + mapper
 - [ ] Google OAuth service with PKCE and state
+- [ ] Password service: Argon2id hashing, register, login, email verification, forgot/reset
+- [ ] Minimal `EmailSender` (Resend) for verification + reset emails
+- [ ] `AccountLinkingService`: link/unlink Google, set password, retain-one-method invariant
 - [ ] JWT service (RS256, key rotation via `kid`)
 - [ ] Rotation service with family reuse detection
 - [ ] `JwtAuthGuard`, `RolesGuard`, `@CurrentUser`, `@Public`, `@Roles`
