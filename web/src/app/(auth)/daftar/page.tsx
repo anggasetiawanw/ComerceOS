@@ -1,17 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LoginForm } from '@/features/auth/components/login-form';
+import { RegisterForm } from '@/features/auth/components/register-form';
 
-const SignInPage = () => {
+const RegisterPage = () => {
   return (
     <Card className="w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Masuk ke Nagihin</CardTitle>
+        <CardTitle>Buat akun Nagihin</CardTitle>
       </CardHeader>
       <CardContent>
-        <LoginForm />
+        <RegisterForm />
       </CardContent>
     </Card>
   );
 };
 
-export default SignInPage;
+export default RegisterPage;

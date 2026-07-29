@@ -44,7 +44,8 @@ web/
 │   │   │       ├── rekonsiliasi/ · toko/ · audit/
 │   │   │       └── layout.tsx
 │   │   ├── (auth)/
-│   │   │   ├── masuk/ · callback/ · lengkapi-profil/
+│   │   │   ├── masuk/ · daftar/ · lupa-password/ · reset-password/
+│   │   │   ├── callback/ · lengkapi-profil/
 │   │   ├── api/                      Route handlers: OAuth cookie exchange, OG images
 │   │   ├── layout.tsx                Root: providers, fonts, theme
 │   │   ├── error.tsx · not-found.tsx
@@ -179,7 +180,10 @@ first real transaction.
 
 | Route | Page | P |
 |---|---|---|
-| `/masuk` | Google sign-in | P0 |
+| `/masuk` | Password login form + Google sign-in | P0 |
+| `/daftar` | Email/password registration | P0 |
+| `/lupa-password` | Request a password reset email | P0 |
+| `/reset-password` | Consume the reset token, set a new password | P0 |
 | `/callback` | OAuth landing, token exchange, redirect | P0 |
 | `/lengkapi-profil` | Name + phone completion | P0 |
 
