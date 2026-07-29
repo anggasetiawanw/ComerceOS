@@ -19,6 +19,22 @@ export const envSchema = z.object({
 
   SWAGGER_USER: z.string().optional().default(''),
   SWAGGER_PASSWORD: z.string().optional().default(''),
+
+  JWT_PRIVATE_KEY: z.string().min(1, 'JWT_PRIVATE_KEY is required'),
+  JWT_PUBLIC_KEY: z.string().min(1, 'JWT_PUBLIC_KEY is required'),
+  JWT_KID: z.string().default('default'),
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
+  JWT_REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
+
+  GOOGLE_CLIENT_ID: z.string().optional().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
+  GOOGLE_REDIRECT_URI: z.string().optional().default(''),
+
+  RESEND_API_KEY: z.string().optional().default(''),
+  EMAIL_FROM_ADDRESS: z.string().default('no-reply@nagihin.id'),
+
+  AUTH_THROTTLE_LIMIT: z.coerce.number().int().positive().default(5),
+  AUTH_THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
 });
 
 export type Env = z.infer<typeof envSchema>;

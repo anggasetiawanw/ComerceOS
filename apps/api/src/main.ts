@@ -4,6 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { AppConfigService } from './shared/config/app-config.service';
 import { DomainExceptionFilter } from './shared/presentation/filters/domain-exception.filter';
@@ -18,6 +19,7 @@ const bootstrap = async (): Promise<void> => {
 
   app.useLogger(app.get(Logger));
   app.use(helmet());
+  app.use(cookieParser());
   app.enableCors({ origin: config.corsOrigins, credentials: true });
   app.setGlobalPrefix('api/v1', { exclude: ['health', 'health/ready', 'docs'] });
 
@@ -29,10 +31,12 @@ const bootstrap = async (): Promise<void> => {
     }),
   );
 
+  // Nest's RouterExceptionFilters reverses this array before matching, so the
+  // most specific filter must be listed last and the catch-all first.
   app.useGlobalFilters(
-    new PrismaExceptionFilter(),
-    new DomainExceptionFilter(),
     new HttpExceptionFilter(),
+    new DomainExceptionFilter(),
+    new PrismaExceptionFilter(),
   );
   app.useGlobalInterceptors(new TransformInterceptor());
 
