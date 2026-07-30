@@ -1,5 +1,13 @@
 import { apiClient } from '@/lib/api/client';
 
+export interface UserStoreSummary {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  plan: string;
+}
+
 export interface UserResponse {
   id: string;
   email: string;
@@ -11,6 +19,7 @@ export interface UserResponse {
   googleLinked: boolean;
   hasPassword: boolean;
   createdAt: string;
+  store: UserStoreSummary | null;
 }
 
 export interface AuthTokensResponse {
@@ -31,4 +40,7 @@ export const authApi = {
     apiClient.post<{ reset: true }>('/auth/reset-password', input, { auth: false }),
   me: () => apiClient.get<UserResponse>('/users/me'),
   logout: () => apiClient.post<{ loggedOut: true }>('/auth/logout'),
+  linkGoogle: (idToken: string) =>
+    apiClient.post<{ linked: true }>('/auth/google/link', { idToken }),
+  unlinkGoogle: () => apiClient.delete<{ unlinked: true }>('/auth/google/unlink'),
 };

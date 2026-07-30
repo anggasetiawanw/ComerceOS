@@ -401,6 +401,13 @@ Three seed sets, run by environment.
 - Plan definitions: free (5%), pro (2.5% + monthly price)
 - Bank code reference list (Indonesian banks + e-wallets)
 
+> **Sprint 3 amendment:** none of the three above turned out to need a database row. The reserved
+> blocklist is a frozen array in `shared/kernel/value-objects/reserved-usernames.ts` (it gates a VO
+> at request time, before any query, and changing it is a code change anyway); plan fee rates are
+> env vars (`PLAN_FEE_RATE_FREE`/`_PRO`) since `plans` isn't a documented table; the bank code list is
+> deferred to Sprint 7 where `bank_accounts` actually lands. `seed/base.ts` therefore stays the
+> empty no-op it was after Sprint 1 — still idempotent and production-safe, just with nothing to do.
+
 ### `seed/dev.ts` — local and staging only
 
 - 3 users: seller, buyer, admin

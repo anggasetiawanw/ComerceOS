@@ -32,7 +32,7 @@ import { LinkGoogleDto } from '../dto/requests/link-google.dto';
 import { SetPasswordDto } from '../dto/requests/set-password.dto';
 import { UserResponseDto } from '../dto/responses/user-response.dto';
 import { AuthTokensResponseDto } from '../dto/responses/auth-tokens-response.dto';
-import { unwrapOrThrow } from './result.helper';
+import { unwrapOrThrow } from '../../../../shared/presentation/http/result.helper';
 import {
   REFRESH_TOKEN_COOKIE,
   setRefreshTokenCookie,

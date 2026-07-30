@@ -11,8 +11,8 @@ import { AppConfigService } from '../config/app-config.service';
       useFactory: (config: AppConfigService) => [
         {
           name: 'default',
-          ttl: config.authThrottleTtlSeconds * 1000,
-          limit: config.authThrottleLimit,
+          ttl: config.generalThrottleTtlSeconds * 1000,
+          limit: config.generalThrottleLimit,
         },
       ],
     }),

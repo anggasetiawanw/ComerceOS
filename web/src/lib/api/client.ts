@@ -97,6 +97,8 @@ export const apiClient = {
       { ...options, method: 'PATCH', body },
       useAuthTokenStore.getState().accessToken,
     ),
+  put: <T>(path: string, body?: unknown, options: Options = {}) =>
+    doFetch<T>(path, { ...options, method: 'PUT', body }, useAuthTokenStore.getState().accessToken),
   delete: <T>(path: string, options: Options = {}) =>
     doFetch<T>(path, { ...options, method: 'DELETE' }, useAuthTokenStore.getState().accessToken),
 };

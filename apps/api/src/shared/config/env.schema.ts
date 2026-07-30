@@ -35,6 +35,27 @@ export const envSchema = z.object({
 
   AUTH_THROTTLE_LIMIT: z.coerce.number().int().positive().default(5),
   AUTH_THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  GENERAL_THROTTLE_LIMIT: z.coerce.number().int().positive().default(300),
+  GENERAL_THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  STOREFRONT_THROTTLE_LIMIT: z.coerce.number().int().positive().default(120),
+  STOREFRONT_THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+
+  HOLDING_DAYS_DIGITAL: z.coerce.number().int().min(0).default(0),
+  HOLDING_DAYS_PHYSICAL: z.coerce.number().int().min(0).default(3),
+  HOLDING_DAYS_SERVICE: z.coerce.number().int().min(0).default(7),
+  MIDTRANS_SETTLEMENT_DAYS: z.coerce.number().int().min(0).default(3),
+  AUTO_FORCE_RELEASE_DAYS: z.coerce.number().int().positive().default(30),
+
+  PLAN_FEE_RATE_FREE: z.coerce.number().min(0).max(1).default(0.05),
+  PLAN_FEE_RATE_PRO: z.coerce.number().min(0).max(1).default(0.025),
+
+  STOREFRONT_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+
+  UPLOAD_MAX_AVATAR_BYTES: z.coerce.number().int().positive().default(2_097_152),
+  UPLOAD_MAX_BANNER_BYTES: z.coerce.number().int().positive().default(5_242_880),
+
+  USERNAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
+  USERNAME_RESERVATION_DAYS: z.coerce.number().int().min(0).default(90),
 });
 
 export type Env = z.infer<typeof envSchema>;

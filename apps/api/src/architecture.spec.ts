@@ -1,7 +1,13 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
 
-const FORBIDDEN_IMPORTS = ['@nestjs/', '@prisma/client', 'bullmq', 'axios'];
+const FORBIDDEN_IMPORTS = [
+  '@nestjs/',
+  '@prisma/client',
+  'bullmq',
+  'axios',
+  '@supabase/supabase-js',
+];
 
 const walk = (dir: string): string[] => {
   if (!statSync(dir, { throwIfNoEntry: false })) return [];

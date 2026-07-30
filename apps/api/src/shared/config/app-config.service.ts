@@ -89,4 +89,93 @@ export class AppConfigService {
   get authThrottleTtlSeconds(): number {
     return this.config.get('AUTH_THROTTLE_TTL_SECONDS', { infer: true });
   }
+
+  get generalThrottleLimit(): number {
+    return this.config.get('GENERAL_THROTTLE_LIMIT', { infer: true });
+  }
+
+  get generalThrottleTtlSeconds(): number {
+    return this.config.get('GENERAL_THROTTLE_TTL_SECONDS', { infer: true });
+  }
+
+  get storefrontThrottleLimit(): number {
+    return this.config.get('STOREFRONT_THROTTLE_LIMIT', { infer: true });
+  }
+
+  get storefrontThrottleTtlSeconds(): number {
+    return this.config.get('STOREFRONT_THROTTLE_TTL_SECONDS', { infer: true });
+  }
+
+  get holdingDaysDigital(): number {
+    return this.config.get('HOLDING_DAYS_DIGITAL', { infer: true });
+  }
+
+  get holdingDaysPhysical(): number {
+    return this.config.get('HOLDING_DAYS_PHYSICAL', { infer: true });
+  }
+
+  get holdingDaysService(): number {
+    return this.config.get('HOLDING_DAYS_SERVICE', { infer: true });
+  }
+
+  get midtransSettlementDays(): number {
+    return this.config.get('MIDTRANS_SETTLEMENT_DAYS', { infer: true });
+  }
+
+  get autoForceReleaseDays(): number {
+    return this.config.get('AUTO_FORCE_RELEASE_DAYS', { infer: true });
+  }
+
+  get planFeeRateFree(): number {
+    return this.config.get('PLAN_FEE_RATE_FREE', { infer: true });
+  }
+
+  get planFeeRatePro(): number {
+    return this.config.get('PLAN_FEE_RATE_PRO', { infer: true });
+  }
+
+  get storefrontCacheTtlSeconds(): number {
+    return this.config.get('STOREFRONT_CACHE_TTL_SECONDS', { infer: true });
+  }
+
+  get uploadMaxAvatarBytes(): number {
+    return this.config.get('UPLOAD_MAX_AVATAR_BYTES', { infer: true });
+  }
+
+  get uploadMaxBannerBytes(): number {
+    return this.config.get('UPLOAD_MAX_BANNER_BYTES', { infer: true });
+  }
+
+  get usernameChangeCooldownDays(): number {
+    return this.config.get('USERNAME_CHANGE_COOLDOWN_DAYS', { infer: true });
+  }
+
+  get usernameReservationDays(): number {
+    return this.config.get('USERNAME_RESERVATION_DAYS', { infer: true });
+  }
+
+  get supabaseUrl(): string {
+    return this.config.get('SUPABASE_URL', { infer: true });
+  }
+
+  get supabaseServiceRoleKey(): string {
+    return this.config.get('SUPABASE_SERVICE_ROLE_KEY', { infer: true });
+  }
+
+  get supabaseBucketPublic(): string {
+    return this.config.get('SUPABASE_BUCKET_PUBLIC', { infer: true });
+  }
+
+  get supabaseBucketPrivate(): string {
+    return this.config.get('SUPABASE_BUCKET_PRIVATE', { infer: true });
+  }
+
+  get isStorageConfigured(): boolean {
+    return (
+      this.supabaseUrl.length > 0 &&
+      this.supabaseServiceRoleKey.length > 0 &&
+      this.supabaseBucketPublic.length > 0 &&
+      this.supabaseBucketPrivate.length > 0
+    );
+  }
 }

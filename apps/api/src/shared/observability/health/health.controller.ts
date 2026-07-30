@@ -5,6 +5,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { Public } from '../../presentation/decorators/public.decorator';
 import { PrismaHealthIndicator } from './prisma.health-indicator';
 import { RedisHealthIndicator } from './redis.health-indicator';
+import { StorageHealthIndicator } from './storage.health-indicator';
 
 @ApiTags('health')
 @Public()
@@ -15,6 +16,7 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly prismaIndicator: PrismaHealthIndicator,
     private readonly redisIndicator: RedisHealthIndicator,
+    private readonly storageIndicator: StorageHealthIndicator,
   ) {}
 
   @Get()
@@ -29,6 +31,7 @@ export class HealthController {
     return this.health.check([
       () => this.prismaIndicator.isHealthy('postgres'),
       () => this.redisIndicator.isHealthy('redis'),
+      () => this.storageIndicator.isHealthy('storage'),
     ]);
   }
 }

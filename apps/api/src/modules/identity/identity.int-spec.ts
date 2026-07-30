@@ -4,6 +4,8 @@ import { PrismaModule } from '../../shared/infrastructure/prisma/prisma.module';
 import { PrismaService } from '../../shared/infrastructure/prisma/prisma.service';
 import { RedisModule } from '../../shared/infrastructure/redis/redis.module';
 import { REDIS_CLIENT } from '../../shared/infrastructure/redis/redis.constants';
+import { EventsModule } from '../../shared/infrastructure/events/events.module';
+import { StorageModule } from '../../shared/infrastructure/storage/storage.module';
 import { AppJwtModule } from '../../shared/security/jwt.module';
 import { IdentityModule } from './identity.module';
 import { AuthService } from './application/services/auth.service';
@@ -57,7 +59,15 @@ describe('Identity (integration)', () => {
     emailSender = new FakeEmailSender();
 
     moduleRef = await Test.createTestingModule({
-      imports: [AppConfigModule, PrismaModule, RedisModule, AppJwtModule, IdentityModule],
+      imports: [
+        AppConfigModule,
+        PrismaModule,
+        RedisModule,
+        EventsModule,
+        StorageModule,
+        AppJwtModule,
+        IdentityModule,
+      ],
     })
       .overrideProvider(GOOGLE_OAUTH_CLIENT)
       .useValue(googleClient)
@@ -70,6 +80,8 @@ describe('Identity (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.socialLink.deleteMany();
+    await prisma.store.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.verificationToken.deleteMany();
     await prisma.user.deleteMany();

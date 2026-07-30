@@ -1,5 +1,7 @@
+import { DashboardShell } from '@/components/layout/dashboard-shell';
+
 const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
-  return <div className="flex flex-1 flex-col">{children}</div>;
+  return <DashboardShell>{children}</DashboardShell>;
 };
 
 export default DashboardLayout;

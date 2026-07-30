@@ -1,5 +1,13 @@
 import { User } from '../../../domain/entities/user.aggregate';
 
+export interface UserStoreSummary {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  plan: string;
+}
+
 export class UserResponseDto {
   id!: string;
   email!: string;
@@ -11,8 +19,9 @@ export class UserResponseDto {
   googleLinked!: boolean;
   hasPassword!: boolean;
   createdAt!: Date;
+  store!: UserStoreSummary | null;
 
-  static fromDomain(user: User): UserResponseDto {
+  static fromDomain(user: User, store: UserStoreSummary | null = null): UserResponseDto {
     const dto = new UserResponseDto();
     dto.id = user.id;
     dto.email = user.email.value;
@@ -24,6 +33,7 @@ export class UserResponseDto {
     dto.googleLinked = user.googleId !== null;
     dto.hasPassword = user.passwordHash !== null;
     dto.createdAt = user.createdAt;
+    dto.store = store;
     return dto;
   }
 }

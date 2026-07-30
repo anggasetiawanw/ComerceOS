@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { DomainError } from '../../../../shared/domain-errors/domain.error';
-import { Result } from '../../../../shared/kernel/result';
+import { DomainError } from '../../domain-errors/domain.error';
+import { Result } from '../../kernel/result';
 
 export const unwrapOrThrow = <T, E extends Error>(result: Result<T, E>): T => {
   if (result.isOk()) {

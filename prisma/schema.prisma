@@ -21,6 +21,16 @@ enum TokenPurpose {
   password_reset
 }
 
+enum StorePlan {
+  free
+  pro
+}
+
+enum SettlementMode {
+  auto
+  manual
+}
+
 // Identity — Sprint 2. IDs are UUIDv7 generated in application code
 // (shared/kernel/uuid.ts), never a database default.
 model User {
@@ -37,6 +47,7 @@ model User {
 
   refreshTokens      RefreshToken[]
   verificationTokens VerificationToken[]
+  store              Store?
 
   @@map("users")
 }
@@ -73,4 +84,44 @@ model VerificationToken {
 
   @@index([userId, purpose])
   @@map("verification_tokens")
+}
+
+// Store — Sprint 3. IDs are UUIDv7 generated in application code
+// (shared/kernel/uuid.ts), never a database default. holding_balance and
+// available_balance are ledger-owned caches (AD-06); only Sprint 6's ledger
+// ever writes them — see StoreMapper.toPersistenceUpdate.
+model Store {
+  id               String         @id
+  ownerId          String         @unique @map("owner_id")
+  username         String         @unique @db.Citext
+  displayName      String         @map("display_name")
+  bio              String?
+  avatarUrl        String?        @map("avatar_url")
+  bannerUrl        String?        @map("banner_url")
+  theme            Json?
+  customDomain     String?        @unique @map("custom_domain")
+  plan             StorePlan      @default(free)
+  settlementMode   SettlementMode @default(auto) @map("settlement_mode")
+  holdingBalance   BigInt         @default(0) @map("holding_balance")
+  availableBalance BigInt         @default(0) @map("available_balance")
+  invoiceCounter   Int            @default(0) @map("invoice_counter")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  socialLinks SocialLink[]
+
+  @@map("stores")
+}
+
+model SocialLink {
+  id       String @id
+  storeId  String @map("store_id")
+  platform String
+  url      String
+  position Int
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@map("social_links")
 }

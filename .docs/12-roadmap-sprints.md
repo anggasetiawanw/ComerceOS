@@ -75,41 +75,102 @@ gantt
 ### Sprint 2 — Identity
 **Goal:** a user can sign in and stay signed in, by Google or by email/password.
 
-- [ ] Migration 002: `users` (+ `role`, `password_hash`, `email_verified_at`, nullable `google_id`), `refresh_tokens`, `verification_tokens` ([AD-13](./README.md#decision-log))
-- [ ] `User` aggregate, `Email`/`Phone`/`UserRole`/`PasswordHash` VOs, `UserRepository` + mapper
-- [ ] Google OAuth: authorize redirect, state in Redis, PKCE, callback, `id_token` verification
-- [ ] Email/password: register, Argon2id hashing, login, email verification, forgot/reset password ([07 §1a](./07-auth.md#1a-email--password-registration-and-login))
-- [ ] Minimal `EmailSender` (Resend) for verification + reset emails only — full `NotificationChannel` port stays Sprint 6
-- [ ] Account linking: `POST /auth/google/link`, `POST /auth/set-password`, `DELETE /auth/google/unlink` — explicit-authenticated-action only, never implicit ([07 §1b](./07-auth.md#1b-account-linking))
-- [ ] Token issuance: RS256 access (15m), opaque refresh (30d, hashed)
-- [ ] Rotation with family reuse detection
-- [ ] `JwtAuthGuard` global + `@Public()`, `RolesGuard`, `@CurrentUser()`
-- [ ] `/auth/*` and `/users/me` endpoints, stricter rate limit on login/register/forgot-password
-- [ ] Frontend: `/masuk` (password form + Google button), `/daftar`, `/lupa-password`, `/reset-password`, `/callback`, `/lengkapi-profil`, token store, silent refresh, single-flight
-- [ ] Middleware protecting `/dashboard/*` and `/akun/*`
-- [ ] Tests: OAuth flow, password register/verify/login, forgot/reset, linking rules (both directions + retain-one-method invariant), rotation, reuse detection, guards
+- [x] Migration 002: `users` (+ `role`, `password_hash`, `email_verified_at`, nullable `google_id`), `refresh_tokens`, `verification_tokens` ([AD-13](./README.md#decision-log))
+- [x] `User` aggregate, `Email`/`UserRole`/`PasswordHash` VOs, `UserRepository` + mapper. **Amendment:** `Phone` stays a plain nullable string on the aggregate rather than a VO — it isn't validated or used yet; wrap it when the WhatsApp channel (Sprint 9) needs a real format check
+- [x] Google OAuth: authorize redirect, state in Redis, PKCE, callback, `id_token` verification
+- [x] Email/password: register, Argon2id hashing, login, email verification, forgot/reset password ([07 §1a](./07-auth.md#1a-email--password-registration-and-login))
+- [x] Minimal `EmailSender` (Resend) for verification + reset emails only — full `NotificationChannel` port stays Sprint 6
+- [x] Account linking: `POST /auth/google/link`, `POST /auth/set-password`, `DELETE /auth/google/unlink` — explicit-authenticated-action only, never implicit ([07 §1b](./07-auth.md#1b-account-linking))
+- [x] Token issuance: RS256 access (15m), opaque refresh (30d, hashed)
+- [x] Rotation with family reuse detection
+- [x] `JwtAuthGuard` global + `@Public()`, `RolesGuard`, `@CurrentUser()`
+- [x] `/auth/*` and `/users/me` endpoints, stricter rate limit on login/register/forgot-password
+- [x] Frontend: `/masuk` (password form + Google button), `/daftar`, `/lupa-password`, `/reset-password`, `/callback`, `/lengkapi-profil`, token store, silent refresh, single-flight
+- [x] Middleware protecting `/dashboard/*` and `/akun/*` — implemented as `web/src/proxy.ts` (Next.js renamed `middleware.ts` to `proxy.ts`)
+- [x] Tests: OAuth flow, password register/verify/login, forgot/reset, linking rules (both directions + retain-one-method invariant), rotation, reuse detection, guards
 
 **Deliverable:** sign in with Google or with email/password, verify email, reset a forgotten password,
 refresh across a reload, sign out. Connecting a Google account from settings ships with Sprint 3's
 `/dashboard/pengaturan`.
+
+**Status: done.** Verified 2026-07-29 — 95/95 unit tests pass, lint and typecheck clean, integration
+suite (`identity.int-spec.ts`) covers register→verify→login, forgot/reset (incl. session revocation),
+refresh rotation + reuse detection, and Google login collision/new-user cases. `test:integration`
+wasn't run live (requires Docker, not running locally) but was read in full and is not stubbed.
 
 ---
 
 ### Sprint 3 — Store & public storefront
 **Goal:** a seller has a shareable link.
 
-- [ ] Migration 003: `stores` (+ `invoice_counter`), `social_links`
-- [ ] `Store` aggregate, `Username` VO + reserved blocklist, `SettlementPolicy` VO
-- [ ] Store creation, profile update, username availability + change
-- [ ] Settlement mode setting with floor enforcement
-- [ ] Social links CRUD + reorder
-- [ ] Storefront read context + Redis cache with event invalidation
-- [ ] Supabase Storage: avatar and banner upload
-- [ ] Frontend: dashboard shell + sidebar, `/dashboard/toko`, `/dashboard/pengaturan`
-- [ ] Frontend: public `/@username` (SSR), `StorefrontHeader`, social links
-- [ ] Seed: reserved usernames, plans, bank codes
+- [x] Migration 003: `stores` (+ `invoice_counter`), `social_links`
+- [x] `Store` aggregate, `Username` VO + reserved blocklist, `SettlementPolicy` VO
+- [x] Store creation, profile update, username availability + change
+- [x] Settlement mode setting with floor enforcement
+- [x] Social links CRUD + reorder
+- [x] Storefront read context + Redis cache with event invalidation
+- [x] Supabase Storage: avatar and banner upload
+- [x] Frontend: dashboard shell + sidebar, `/dashboard/toko`, `/dashboard/pengaturan`
+- [x] Frontend: public `/@username` (SSR), `StorefrontHeader`, social links
+- [x] Seed: reserved usernames, plans, bank codes
 
 **Deliverable:** create a store, claim `@username`, view the live public page.
+
+**Status: done.** Verified 2026-07-30 — 33 API unit suites (225 tests) and 3 integration suites
+(23 tests, real Postgres + Redis) pass; web typecheck, lint, and `next build` are clean. Live
+smoke test against running `api`/`web` dev servers: register → verify → login → create store →
+username availability (reserved + free) → social link add → public `/storefront/:username` (cached
+in Redis, case-insensitive, 404s for unknown) → SSR `/@username` page (display name present in
+initial HTML, correct `<title>`) → `/username` (no `@`) also resolves → unknown username renders
+the not-found page.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- Reserved usernames are a frozen code constant (`shared/kernel/value-objects/reserved-usernames.ts`),
+  not a table; plan fee rates come from env (`PLAN_FEE_RATE_FREE`/`_PRO`); bank codes are deferred to
+  Sprint 7. `prisma/seed/base.ts` stays an empty no-op — see [06 §5](./06-database-roadmap.md).
+- `Username` VO lives in `shared/kernel/value-objects/`, not inside the store module, so the
+  storefront module can validate/normalize a handle without importing another module's domain layer.
+  This makes Sprint 2's module-local `Email` VO the inconsistent one, not `Username`.
+- `stores.owner_id` is `@unique` — one store per user is a database invariant, not just an
+  application check. Not stated explicitly in the docs; consistent with "satu seller = satu toko."
+- `stores.owner_id → users` FK is `ON DELETE RESTRICT` (a store carries balances); `social_links →
+  stores` cascades (purely presentational) — matches [06 §4](./06-database-roadmap.md#4-constraints).
+- Username changes are throttled *and* governed by two Redis-backed policies with no schema
+  column: a 30-day per-store change cooldown, and a 90-day reservation on a released handle so a
+  stranger cannot immediately claim a seller's old link. Both configurable via
+  `USERNAME_CHANGE_COOLDOWN_DAYS` / `USERNAME_RESERVATION_DAYS`.
+- `POST /stores/me/avatar` and `POST /stores/me/banner` (multipart upload, magic-byte validated,
+  2MB/5MB limits) are new endpoints not listed in [05 §3](./05-api-roadmap.md); they upload and
+  persist the URL in one step rather than a bare-URL-then-PATCH flow.
+- Storage has three adapters behind one `StorageUploader` port: Supabase (used when
+  `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set), a filesystem adapter writing into
+  `web/public/uploads` (used in development when Supabase is unconfigured, so uploads are actually
+  testable locally), and a null adapter that throws a clear 503 in production when unconfigured.
+- No outbox exists yet (Sprint 5), so storefront cache invalidation is an in-process
+  `DomainEventPublisher` (`shared/infrastructure/events/`) that Store publishes to after each
+  commit and the storefront module subscribes to. This works only within a single API process —
+  the 60s Redis TTL is the real staleness guarantee once there is a second replica or the worker
+  starts touching stores. Redis pub/sub is the documented upgrade path.
+- The global rate limiter was a single `default` bucket shared by every route, including
+  `/users/me`, capped at `AUTH_THROTTLE_LIMIT` (5/min) — a Sprint 2 bug this sprint was the first to
+  actually trigger. Fixed by renaming that global bucket's source to `GENERAL_THROTTLE_LIMIT`
+  (300/min, matching [05 §17](./05-api-roadmap.md)) and keeping the existing per-route
+  `@Throttle` overrides for login/register/forgot-password at the original 5/min.
+- `/users/me` and `/users` PATCH responses now include a `store: { id, username, displayName,
+  avatarUrl, plan } | null` summary ([05 §2](./05-api-roadmap.md)) — a breaking change to
+  `web/src/features/auth/api/auth.api.ts`'s `UserResponse`, updated in the same change.
+- `SettlementPolicy`'s `effectiveHoldUntil`/`forcedReleaseAt` are fully implemented and unit-tested
+  but not called from any production code path yet — `ProductRiskTier` doesn't exist until Sprint 4
+  and the release job doesn't exist until Sprint 6. The risk tier is a local `'low'|'medium'|'high'`
+  string union in the VO file rather than an import from a module that doesn't exist yet.
+- `StoreOwnerGuard` lives in `modules/store/presentation/guards/`, not `shared/presentation/guards/`
+  as [02's folder tree](./02-architecture.md) suggests, because it depends on `STORE_REPOSITORY` and
+  a shared-layer file importing a module's token would invert the dependency direction.
+- The JWT `storeId` claim is populated on login/refresh but is treated purely as a UI hint — every
+  tier-`S` request re-resolves ownership from the database via `StoreOwnerGuard`, per
+  [07 §2](./07-auth.md). A user who creates a store keeps working immediately (the guard doesn't
+  need the claim); the frontend gets the claim into a fresh token via the existing single-flight
+  `refreshAccessToken()` after `POST /stores` succeeds.
 
 ---
 
@@ -280,24 +341,27 @@ balances.
 - [ ] BullMQ registration, queue names, typed payloads — Sprint 5
 - [ ] Outbox service, table, and relay — Sprint 5
 - [ ] Idempotency store + interceptor — Sprint 5
-- [ ] Supabase Storage service (upload, signed URL) — Sprint 3
-- [x] Health indicators: Postgres, Redis. Storage indicator deferred until the storage service exists
+- [x] Supabase Storage service (upload, signed URL) — plus a filesystem dev adapter and a null
+  adapter behind the same `StorageUploader` port
+- [x] Health indicators: Postgres, Redis, Storage
+- [x] Typed cache wrapper (`shared/infrastructure/cache/`) and in-process domain event publisher
+  (`shared/infrastructure/events/`) — Sprint 3, ahead of the Sprint 5 outbox
 
 **Identity**
-- [ ] `User` aggregate + `RefreshToken` entity + `VerificationToken` repository + mapper
-- [ ] Google OAuth service with PKCE and state
-- [ ] Password service: Argon2id hashing, register, login, email verification, forgot/reset
-- [ ] Minimal `EmailSender` (Resend) for verification + reset emails
-- [ ] `AccountLinkingService`: link/unlink Google, set password, retain-one-method invariant
-- [ ] JWT service (RS256, key rotation via `kid`)
-- [ ] Rotation service with family reuse detection
-- [ ] `JwtAuthGuard`, `RolesGuard`, `@CurrentUser`, `@Public`, `@Roles`
-- [ ] Auth + user controllers
+- [x] `User` aggregate + `RefreshToken` entity + `VerificationToken` repository + mapper
+- [x] Google OAuth service with PKCE and state
+- [x] Password service: Argon2id hashing, register, login, email verification, forgot/reset
+- [x] Minimal `EmailSender` (Resend) for verification + reset emails
+- [x] `AccountLinkingService`: link/unlink Google, set password, retain-one-method invariant
+- [x] JWT service (RS256, key rotation via `kid`)
+- [x] Rotation service with family reuse detection
+- [x] `JwtAuthGuard`, `RolesGuard`, `@CurrentUser`, `@Public`, `@Roles`
+- [x] Auth + user controllers
 
 **Store / Catalog**
-- [ ] `Store` aggregate, `SettlementPolicy` VO, username service with blocklist
+- [x] `Store` aggregate, `SettlementPolicy` VO, username service with blocklist
 - [ ] `Product` aggregate, `ProductRiskTierResolver`
-- [ ] Storefront read repository + cache invalidation on events
+- [x] Storefront read repository + cache invalidation on events
 
 **Ordering**
 - [ ] `Order` aggregate with all guarded transitions
@@ -340,18 +404,23 @@ balances.
 
 - [x] Next.js App Router with route groups (placeholder pages; real content lands sprint-by-sprint)
 - [x] Tailwind + shadcn init, theme tokens, dark mode without flash
-- [ ] Typed API client with auth interceptor and single-flight refresh
-- [ ] TanStack Query provider, per-feature query keys
-- [ ] Auth store (Zustand, memory only), middleware guard
-- [ ] Layout shells: marketing, storefront, dashboard, admin, buyer
+- [x] Typed API client with auth interceptor and single-flight refresh, plus a separate server-only
+  fetcher (`lib/api/server-client.ts`, zod-validated) for SSR reads
+- [x] TanStack Query provider, per-feature query keys
+- [x] Auth store (Zustand, memory only), middleware guard
+- [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard and storefront shells
+  done; marketing, admin, buyer still placeholders
 - [ ] `DataTable` with responsive card fallback
-- [ ] `EmptyState` / `ErrorState` / skeleton set
+- [x] `EmptyState` / `ErrorState` / skeleton set
 - [ ] `MoneyDisplay`, `MoneyInput` (bigint-safe)
 - [ ] `OrderStatusBadge`, `Timeline`, `HoldingCountdown`, `BalanceCard`
-- [ ] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput`
-- [ ] Storefront pages (SSR), product page, `BuyWhatsAppButtons`
+- [ ] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` and
+  `UsernameInput` done; `FileUploader`/`PhoneInput` land with Sprint 4 / Sprint 9
+- [ ] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — storefront profile page done;
+  product page is Sprint 4, WhatsApp buttons are Sprint 9
 - [ ] Checkout + Snap integration + status polling
-- [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory)
+- [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko` and `pengaturan`
+  done, the rest land sprint-by-sprint
 - [ ] Buyer `/akun` pages
 - [ ] Admin pages
 - [ ] `InvoicePreview` shared with the PDF renderer
@@ -375,7 +444,7 @@ balances.
 
 ### Database
 
-- [ ] Migrations 001–019 in order (001 done — extensions only, no tables yet)
+- [ ] Migrations 001–019 in order (001–003 done — 003 adds `stores`, `social_links`)
 - [ ] All check constraints from [06 §4](./06-database-roadmap.md#4-constraints)
 - [ ] All indexes from [06 §3](./06-database-roadmap.md#3-indexes)
 - [x] `seed/base.ts` (idempotent, production-safe) — no-op stub until Sprint 3 needs reserved usernames

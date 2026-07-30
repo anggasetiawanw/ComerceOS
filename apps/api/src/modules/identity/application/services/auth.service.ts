@@ -33,6 +33,7 @@ import {
 } from '../ports/google-oauth-client.port';
 import { OAUTH_STATE_STORE, OAuthStateStore } from '../ports/oauth-state-store.port';
 import { EMAIL_SENDER, EmailSender } from '../ports/email-sender.port';
+import { STORE_LOOKUP, StoreLookup } from '../ports/store-lookup.port';
 import { generateOpaqueToken, hashToken } from '../util/secure-token';
 
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -57,6 +58,7 @@ export class AuthService {
     @Inject(GOOGLE_OAUTH_CLIENT) private readonly googleClient: GoogleOAuthClient,
     @Inject(OAUTH_STATE_STORE) private readonly oauthStateStore: OAuthStateStore,
     @Inject(EMAIL_SENDER) private readonly emailSender: EmailSender,
+    @Inject(STORE_LOOKUP) private readonly storeLookup: StoreLookup,
     private readonly transactionManager: TransactionManager,
     private readonly jwt: AppJwtService,
     private readonly config: AppConfigService,
@@ -339,10 +341,12 @@ export class AuthService {
       await this.refreshTokens.save(outcome.issued);
     });
 
+    const storeId = await this.storeLookup.findStoreIdByOwner(user.id);
     const accessToken = await this.jwt.signAccessToken({
       sub: user.id,
       email: user.email.value,
       role: user.role.value,
+      storeId: storeId ?? undefined,
     });
 
     return Result.ok({
@@ -378,9 +382,7 @@ export class AuthService {
   ): Promise<AuthResult> {
     const refreshTokenPlain = generateOpaqueToken();
     const family = TokenFamily.create();
-    const expiresAt = new Date(
-      Date.now() + this.config.jwtRefreshTtlDays * 24 * 60 * 60 * 1000,
-    );
+    const expiresAt = new Date(Date.now() + this.config.jwtRefreshTtlDays * 24 * 60 * 60 * 1000);
 
     const refreshToken = RefreshToken.issue({
       userId: user.id,
@@ -393,10 +395,12 @@ export class AuthService {
 
     await this.refreshTokens.save(refreshToken);
 
+    const storeId = await this.storeLookup.findStoreIdByOwner(user.id);
     const accessToken = await this.jwt.signAccessToken({
       sub: user.id,
       email: user.email.value,
       role: user.role.value,
+      storeId: storeId ?? undefined,
     });
 
     return { user, accessToken, refreshTokenPlain, refreshTokenExpiresAt: expiresAt };
