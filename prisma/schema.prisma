@@ -31,6 +31,18 @@ enum SettlementMode {
   manual
 }
 
+enum ProductType {
+  digital
+  physical
+  service
+}
+
+enum ProductStatus {
+  active
+  draft
+  archived
+}
+
 // Identity — Sprint 2. IDs are UUIDv7 generated in application code
 // (shared/kernel/uuid.ts), never a database default.
 model User {
@@ -109,6 +121,7 @@ model Store {
 
   owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   socialLinks SocialLink[]
+  products    Product[]
 
   @@map("stores")
 }
@@ -124,4 +137,52 @@ model SocialLink {
 
   @@index([storeId])
   @@map("social_links")
+}
+
+// Catalog — Sprint 4. IDs are UUIDv7 generated in application code
+// (shared/kernel/uuid.ts), never a database default. price/hpp are BIGINT
+// rupiah integers (AD-04), not numeric — see shared/kernel/value-objects/money.vo.ts.
+// products.store_id is ON DELETE RESTRICT: order_items will reference products
+// by ID (Sprint 5, also RESTRICT), and products are archived, never hard-deleted
+// (.docs/06-database-roadmap.md §4, .docs/03-bounded-contexts.md §3.3).
+model Product {
+  id          String        @id
+  storeId     String        @map("store_id")
+  name        String
+  slug        String
+  description String?
+  price       BigInt
+  hpp         BigInt?
+  productType ProductType   @map("product_type")
+  stock       Int?
+  images      Json          @default("[]")
+  status      ProductStatus @default(draft)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  store        Store         @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  digitalFiles DigitalFile[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, status])
+  @@map("products")
+}
+
+// digital_files gains file_name/size_bytes/content_type beyond the documented
+// spec — needed for Content-Disposition on signed-URL downloads (Sprint 5/6)
+// and a usable files list in the dashboard. size_bytes is Int, not BigInt, so
+// it never needs bigint-safe JSON handling.
+model DigitalFile {
+  id           String   @id
+  productId    String   @map("product_id")
+  filePath     String   @map("file_path")
+  fileName     String   @map("file_name")
+  sizeBytes    Int      @map("size_bytes")
+  contentType  String   @map("content_type")
+  maxDownloads Int      @default(3) @map("max_downloads")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("digital_files")
 }

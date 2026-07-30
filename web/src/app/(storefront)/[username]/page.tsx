@@ -4,7 +4,7 @@ import { storefrontApi } from '@/features/storefront/api/storefront.api';
 import { NotFoundError } from '@/lib/api/server-client';
 import { StorefrontHeader } from '@/features/storefront/components/storefront-header';
 import { StorefrontSocialLinks } from '@/features/storefront/components/storefront-social-links';
-import { StorefrontEmpty } from '@/features/storefront/components/storefront-empty';
+import { ProductGrid } from '@/features/storefront/components/product-grid';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
 
@@ -46,7 +46,7 @@ const StorefrontPage = async ({ params }: StorefrontPageProps) => {
     <div className="flex flex-1 flex-col">
       <StorefrontHeader store={store} />
       <StorefrontSocialLinks links={store.socialLinks} />
-      <StorefrontEmpty />
+      <ProductGrid username={store.username} products={store.products} />
     </div>
   );
 };

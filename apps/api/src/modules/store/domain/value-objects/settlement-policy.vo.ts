@@ -1,11 +1,10 @@
 import { addDays, max as maxDate } from 'date-fns';
 import { ValueObject } from '../../../../shared/kernel/value-object.base';
+import { ProductRiskTier } from '../../../../shared/kernel/value-objects/product-risk-tier';
 import { SettlementMode, SettlementModeValue } from './settlement-mode.vo';
 
-export type RiskTier = 'low' | 'medium' | 'high';
-
 export interface PlatformFloorConfig {
-  holdingDaysByTier: Readonly<Record<RiskTier, number>>;
+  holdingDaysByTier: Readonly<Record<ProductRiskTier, number>>;
   midtransSettlementDays: number;
   autoForceReleaseDays: number;
 }
@@ -30,7 +29,7 @@ export class SettlementPolicy extends ValueObject<SettlementPolicyProps> {
 
   effectiveHoldUntil(params: {
     paidAt: Date;
-    riskTier: RiskTier;
+    riskTier: ProductRiskTier;
     shippedAt?: Date | null;
     sellerRequestedHold?: Date | null;
   }): Date {

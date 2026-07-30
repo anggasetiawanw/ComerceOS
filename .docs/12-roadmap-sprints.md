@@ -177,17 +177,97 @@ Decisions and drift from the docs, recorded here rather than silently:
 ### Sprint 4 — Catalog
 **Goal:** there is something to sell.
 
-- [ ] Migration 004: `products`, `digital_files`
-- [ ] `Product` aggregate, `ProductType`/`ProductStatus`/`Slug`/`StockLevel` VOs, `ProductRiskTierResolver`
-- [ ] Product CRUD, publish/archive, slug uniqueness per store
-- [ ] Image upload (public bucket), reorder, delete
-- [ ] Digital file upload (private bucket), validation that digital products have files before publishing
-- [ ] Public product endpoints + cache
-- [ ] Frontend: `/dashboard/produk` list, create/edit form, `ImageUploader`, `FileUploader`, `MoneyInput`
-- [ ] Frontend: public product page with Beli + Tanya buttons (Tanya inert until Sprint 9)
-- [ ] Tests: product rules, slug collisions, storage integration
+- [x] Migration 004: `products`, `digital_files`
+- [x] `Product` aggregate, `ProductType`/`ProductStatus`/`Slug`/`StockLevel` VOs, `ProductRiskTierResolver`
+- [x] Product CRUD, publish/archive, slug uniqueness per store
+- [x] Image upload (public bucket), delete — reorder deferred, see drift below
+- [x] Digital file upload (private bucket), validation that digital products have files before publishing
+- [x] Public product endpoints + cache
+- [x] Frontend: `/dashboard/produk` list, create/edit form, `ImageUploader`, `FileUploader`, `MoneyInput`
+- [x] Frontend: public product page with Beli + Tanya buttons (both inert until Sprint 5's checkout — see drift below)
+- [x] Tests: product rules, slug collisions, storage integration
 
 **Deliverable:** publish a digital product and see it on the public storefront.
+
+**Status: done.** Verified 2026-07-30 — 43 API unit suites (347 tests) and 4 integration suites
+(42 tests, real Postgres + Redis) pass; web typecheck, lint, and `next build` are clean. Live
+smoke test against running `api`/`web` servers: register → verify → login → create store →
+create product (draft) → publish rejected without a digital file (422) → upload digital file →
+publish succeeds → product visible on `GET /storefront/:username` and busts the cache → archive
+removes it again. Separately: create a physical product → publish → SSR `/@username` shows it in
+the grid → SSR `/@username/produk/:slug` renders name/price/description in the initial HTML
+(verified via `view-source`, not devtools) → unknown slug renders the not-found page.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- Full sprint scope was estimated at 34-38h against the ~20-25h part-time budget; the following
+  items were cut to fit and are the acknowledged gap against the checklist above:
+  - **Image reorder** (`PUT /products/:id/images/order`) was not built — upload order is display
+    order for now. The checklist above is marked done on upload+delete; reorder is the one
+    sub-item still open.
+  - **`GET /storefront/:username/products`** (a separate paginated public endpoint) was not
+    built. `GET /storefront/:username` embeds up to 24 active products directly instead, so the
+    SSR storefront page is one round trip — the more important property for AD-11 SEO/performance.
+    `CacheService` has no prefix-delete for per-page keys yet, which this also sidesteps.
+  - A dedicated Redis cache layer for individual product-detail pages was not built. The public
+    product endpoint is still cached indirectly — the storefront-level 60s cache plus the web
+    app's `revalidate: 60` ISR are the only caches. `GET /storefront/:username/products/:slug`
+    still exists and is invalidated on product events.
+  - Dashboard product list UI has a status filter only (draft/active/archived tabs); free-text
+    search and a type filter are not exposed in the UI. The API (`GET /products`) already accepts
+    `search` and `productType` query params, so this is a UI-only gap.
+  - `PATCH /products/:id/stock` (P1) and `StockReservationService` were not built.
+    `PATCH /products/:id` already accepts `stock`, so stock edits work; `StockReservationService`'s
+    only real caller is Sprint 5's `MarkOrderPaid`, which doesn't exist yet.
+  - No `DataTable`, no `table`/`alert-dialog` shadcn primitives, no `@tanstack/react-table` — the
+    product list is a card list (`social-links-editor.tsx` precedent) plus the existing `dialog`
+    for archive confirmation. `DataTable` is deferred to Sprint 5, which needs cursor pagination
+    and row selection for orders — building it against an 8-field product list would have guessed
+    that contract.
+  - `MarginWarning` (below-HPP advisory) was not built — `.docs/11-frontend.md` lists it, but it
+    is actually a Sprint 10 (Promotions) deliverable per the sprint backlog, not Sprint 4.
+- `digital_files` gains three undocumented columns beyond `.docs/brief/database-schema.md`:
+  `file_name`, `size_bytes` (`Int`, not `BigInt`, so it never needs bigint-safe JSON handling),
+  `content_type`. Needed for a usable files list in the dashboard and for `Content-Disposition`
+  when Sprint 5/6 issues signed download URLs.
+- `products.images` is a jsonb array of `{ id, path, url }` objects, not the bare "Array URL" the
+  database-schema doc describes. The seller API exposes only `{ id, url }`; `path` (the private
+  storage key) never leaves the API. The `id` is what `DELETE /products/:id/images/:imageId`
+  addresses by, since neither URL nor path is a stable, adapter-independent key.
+- `Slug` VO lives in `shared/kernel/value-objects/slug.vo.ts` (matching `Username`'s precedent
+  from Sprint 3) rather than inside the catalog module, so the storefront module can normalize a
+  slug without importing catalog's domain layer.
+- `ProductRiskTier` moved to `shared/kernel/value-objects/product-risk-tier.ts`. `SettlementPolicy`
+  in the store module previously declared a local `'low'|'medium'|'high'` union with a comment
+  noting it was a placeholder until catalog existed (Sprint 3 note) — that placeholder is now
+  gone and both modules share the same kernel type.
+- `StoreOwnerGuard` is now exported from `StoreModule` (it was provided but not exported) so
+  catalog's controllers can apply it — a gap in Sprint 3's module that only mattered once a second
+  module needed the guard.
+- `products.store_id` is `ON DELETE RESTRICT` (`.docs/06-database-roadmap.md §4` left this
+  relationship unspecified). Matches the doc's stated rule ("financial restricts, presentational
+  cascades") and the fact that `order_items → products` will also be `RESTRICT` in Sprint 5 — a
+  cascading delete from `stores` would have hit that wall anyway once orders exist.
+- `POST /products/:id/publish` is legal from both `draft` and `archived` — the only path back to
+  `active` for an archived product, since there is no separate "unarchive" endpoint.
+- Public product endpoints (`GET /storefront/:username/products/:slug`) live in
+  `modules/storefront`, not a `PublicProductsController` inside `modules/catalog` as
+  `.docs/04-entity-design.md §3` names it — matches `.docs/03-bounded-contexts.md §3.15`, which
+  assigns the public read surface to storefront specifically because its caching and rate-limit
+  needs differ from the seller-facing catalog API, and the cache/invalidator machinery already
+  lives there from Sprint 3.
+- Offset pagination (`{ data, meta: { page, limit, total, hasMore } }`) is now a real thing:
+  `shared/presentation/dto/paginated.dto.ts`'s `Paginated<T>` marker class, detected by
+  `TransformInterceptor` and unwrapped into the envelope. `web`'s `apiClient` gained
+  `getPaginated<T>` since the existing `doFetch` discarded the `meta` field entirely.
+- Product images render through a raw `<img>`, not `next/image`, on both the dashboard and the
+  storefront. `next.config.ts`'s `images.remotePatterns` only allows the production Supabase host,
+  and the dev-mode filesystem `StorageUploader` adapter serves images from
+  `http://localhost:3000/uploads/...` — an http URL that `next/image` won't optimize anyway.
+  `ProductImages` (the catalog VO) accordingly accepts both `http` and `https` URLs, unlike
+  `StoreProfile`'s avatar/banner fields, which are https-only.
+- `web/public/uploads/` was untracked but not gitignored since Sprint 3 (avatars/banners already
+  wrote there in dev); added to `.gitignore` now that product images make it a certainty rather
+  than an edge case.
 
 ---
 
@@ -360,7 +440,7 @@ balances.
 
 **Store / Catalog**
 - [x] `Store` aggregate, `SettlementPolicy` VO, username service with blocklist
-- [ ] `Product` aggregate, `ProductRiskTierResolver`
+- [x] `Product` aggregate, `ProductRiskTierResolver`
 - [x] Storefront read repository + cache invalidation on events
 
 **Ordering**
@@ -410,14 +490,15 @@ balances.
 - [x] Auth store (Zustand, memory only), middleware guard
 - [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard and storefront shells
   done; marketing, admin, buyer still placeholders
-- [ ] `DataTable` with responsive card fallback
+- [ ] `DataTable` with responsive card fallback — deferred to Sprint 5 (orders need cursor
+  pagination + row selection); the product list uses a card layout instead
 - [x] `EmptyState` / `ErrorState` / skeleton set
-- [ ] `MoneyDisplay`, `MoneyInput` (bigint-safe)
+- [x] `MoneyDisplay`, `MoneyInput` (bigint-safe)
 - [ ] `OrderStatusBadge`, `Timeline`, `HoldingCountdown`, `BalanceCard`
-- [ ] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` and
-  `UsernameInput` done; `FileUploader`/`PhoneInput` land with Sprint 4 / Sprint 9
-- [ ] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — storefront profile page done;
-  product page is Sprint 4, WhatsApp buttons are Sprint 9
+- [x] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` genericized
+  in Sprint 4 (was hardcoded to `Store`); `FileUploader` done; `PhoneInput` lands with Sprint 9
+- [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — product page done; Beli is
+  visually present but inert until Sprint 5's checkout, Tanya inert until Sprint 9 as documented
 - [ ] Checkout + Snap integration + status polling
 - [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko` and `pengaturan`
   done, the rest land sprint-by-sprint
@@ -444,7 +525,7 @@ balances.
 
 ### Database
 
-- [ ] Migrations 001–019 in order (001–003 done — 003 adds `stores`, `social_links`)
+- [ ] Migrations 001–019 in order (001–004 done — 004 adds `products`, `digital_files`)
 - [ ] All check constraints from [06 §4](./06-database-roadmap.md#4-constraints)
 - [ ] All indexes from [06 §3](./06-database-roadmap.md#3-indexes)
 - [x] `seed/base.ts` (idempotent, production-safe) — no-op stub until Sprint 3 needs reserved usernames

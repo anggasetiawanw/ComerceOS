@@ -7,6 +7,17 @@ export interface StorefrontSocialLinkRow {
   position: number;
 }
 
+export interface StorefrontProductRow {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: string;
+  productType: string;
+  stock: number | null;
+  imageUrls: string[];
+}
+
 export interface StorefrontStoreRow {
   id: string;
   username: string;
@@ -17,8 +28,11 @@ export interface StorefrontStoreRow {
   theme: unknown;
   plan: string;
   socialLinks: StorefrontSocialLinkRow[];
+  products: StorefrontProductRow[];
 }
 
 export interface StorefrontReadRepository {
   findByUsername(username: string): Promise<StorefrontStoreRow | null>;
+  findProductBySlug(username: string, slug: string): Promise<StorefrontProductRow | null>;
+  findUsernameByStoreId(storeId: string): Promise<string | null>;
 }

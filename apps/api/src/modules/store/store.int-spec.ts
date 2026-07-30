@@ -43,6 +43,8 @@ describe('Store (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.digitalFile.deleteMany();
+    await prisma.product.deleteMany();
     await prisma.socialLink.deleteMany();
     await prisma.store.deleteMany();
     await prisma.user.deleteMany();

@@ -11,7 +11,7 @@ export const AvatarUploader = ({ store }: { store: Store }) => {
   const queryClient = useQueryClient();
 
   return (
-    <ImageUploader
+    <ImageUploader<Store>
       label="Avatar"
       endpoint="/stores/me/avatar"
       maxBytes={AVATAR_MAX_BYTES}

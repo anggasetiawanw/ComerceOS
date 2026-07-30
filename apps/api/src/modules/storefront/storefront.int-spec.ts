@@ -11,6 +11,8 @@ import { generateId } from '../../shared/kernel/uuid';
 import { StoreModule } from '../store/store.module';
 import { StoreService } from '../store/application/services/store.service';
 import { SocialLinkService } from '../store/application/services/social-link.service';
+import { CatalogModule } from '../catalog/catalog.module';
+import { ProductService } from '../catalog/application/services/product.service';
 import { StorefrontModule } from './storefront.module';
 import { StorefrontService, storefrontCacheKey } from './application/services/storefront.service';
 import { StorefrontCacheInvalidator } from './application/services/storefront-cache.invalidator';
@@ -33,6 +35,7 @@ describe('Storefront (integration)', () => {
   let prisma: PrismaService;
   let storeService: StoreService;
   let socialLinkService: SocialLinkService;
+  let productService: ProductService;
   let storefrontService: StorefrontService;
   let readRepository: StorefrontReadRepository;
 
@@ -46,6 +49,7 @@ describe('Storefront (integration)', () => {
         EventsModule,
         StorageModule,
         StoreModule,
+        CatalogModule,
         StorefrontModule,
       ],
     }).compile();
@@ -53,6 +57,7 @@ describe('Storefront (integration)', () => {
     prisma = moduleRef.get(PrismaService);
     storeService = moduleRef.get(StoreService);
     socialLinkService = moduleRef.get(SocialLinkService);
+    productService = moduleRef.get(ProductService);
     storefrontService = moduleRef.get(StorefrontService);
     readRepository = moduleRef.get(STOREFRONT_READ_REPOSITORY);
 
@@ -60,6 +65,8 @@ describe('Storefront (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.digitalFile.deleteMany();
+    await prisma.product.deleteMany();
     await prisma.socialLink.deleteMany();
     await prisma.store.deleteMany();
     await prisma.user.deleteMany();
@@ -87,7 +94,18 @@ describe('Storefront (integration)', () => {
 
     expect(result).not.toBeNull();
     expect(Object.keys(result ?? {}).sort()).toEqual(
-      ['avatarUrl', 'bannerUrl', 'bio', 'displayName', 'id', 'plan', 'socialLinks', 'theme', 'username'].sort(),
+      [
+        'avatarUrl',
+        'bannerUrl',
+        'bio',
+        'displayName',
+        'id',
+        'plan',
+        'products',
+        'socialLinks',
+        'theme',
+        'username',
+      ].sort(),
     );
   });
 
@@ -163,5 +181,94 @@ describe('Storefront (integration)', () => {
     const result = await storefrontService.getByUsername('tokocorrupt');
 
     expect(result?.username).toBe('tokocorrupt');
+  });
+
+  describe('catalog integration', () => {
+    it('embeds only active products, never draft ones', async () => {
+      const user = await createUser(prisma, 'seller8@example.com');
+      const store = (
+        await storeService.createStore({ ownerId: user.id, username: 'tokoproduk' })
+      ).unwrap();
+
+      const draft = (
+        await productService.create(store.id, { name: 'Draft', price: '10000', productType: 'physical' })
+      ).unwrap();
+      const active = (
+        await productService.create(store.id, { name: 'Aktif', price: '20000', productType: 'physical' })
+      ).unwrap();
+      await productService.publish(store.id, active.id);
+
+      const result = await storefrontService.getByUsername('tokoproduk');
+
+      expect(result?.products.map((product) => product.id)).toEqual([active.id]);
+      expect(result?.products.map((product) => product.id)).not.toContain(draft.id);
+    });
+
+    it('serves product detail by slug for an active product', async () => {
+      const user = await createUser(prisma, 'seller9@example.com');
+      const store = (
+        await storeService.createStore({ ownerId: user.id, username: 'tokoslugpublik' })
+      ).unwrap();
+      const product = (
+        await productService.create(store.id, {
+          name: 'Kaos Polos',
+          price: '75000',
+          productType: 'physical',
+        })
+      ).unwrap();
+      await productService.publish(store.id, product.id);
+
+      const result = await storefrontService.getProduct('tokoslugpublik', 'kaos-polos');
+
+      expect(result).not.toBeNull();
+      expect(result?.price).toBe('75000');
+    });
+
+    it('returns null for a draft product slug (not yet public)', async () => {
+      const user = await createUser(prisma, 'seller10@example.com');
+      const store = (
+        await storeService.createStore({ ownerId: user.id, username: 'tokodraftslug' })
+      ).unwrap();
+      await productService.create(store.id, { name: 'Belum Terbit', price: '10000', productType: 'physical' });
+
+      const result = await storefrontService.getProduct('tokodraftslug', 'belum-terbit');
+
+      expect(result).toBeNull();
+    });
+
+    it('busts the storefront cache when a product is published', async () => {
+      const user = await createUser(prisma, 'seller11@example.com');
+      const store = (
+        await storeService.createStore({ ownerId: user.id, username: 'tokopublish' })
+      ).unwrap();
+      const product = (
+        await productService.create(store.id, { name: 'Produk A', price: '10000', productType: 'physical' })
+      ).unwrap();
+
+      const before = await storefrontService.getByUsername('tokopublish');
+      expect(before?.products).toHaveLength(0);
+
+      await productService.publish(store.id, product.id);
+
+      const after = await storefrontService.getByUsername('tokopublish');
+      expect(after?.products).toHaveLength(1);
+    });
+
+    it('busts the storefront cache when a product is archived', async () => {
+      const user = await createUser(prisma, 'seller12@example.com');
+      const store = (
+        await storeService.createStore({ ownerId: user.id, username: 'tokoarchive' })
+      ).unwrap();
+      const product = (
+        await productService.create(store.id, { name: 'Produk B', price: '10000', productType: 'physical' })
+      ).unwrap();
+      await productService.publish(store.id, product.id);
+
+      await storefrontService.getByUsername('tokoarchive');
+      await productService.archive(store.id, product.id);
+
+      const after = await storefrontService.getByUsername('tokoarchive');
+      expect(after?.products).toHaveLength(0);
+    });
   });
 });

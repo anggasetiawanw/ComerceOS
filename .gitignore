@@ -19,6 +19,9 @@ out/
 # prisma
 prisma/generated/
 
+# local dev file storage (filesystem StorageUploader adapter)
+web/public/uploads/
+
 # logs
 *.log
 npm-debug.log*

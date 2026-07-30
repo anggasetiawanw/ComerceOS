@@ -17,6 +17,18 @@ export class ApiError extends Error {
   }
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}
+
+export interface PaginatedResult<T> {
+  items: T[];
+  meta: PaginationMeta;
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -31,15 +43,15 @@ const isProblemDetail = (value: unknown): value is ProblemDetail =>
   'detail' in value &&
   'title' in value;
 
-const isEnvelope = (value: unknown): value is { data: unknown } =>
+const isEnvelope = (value: unknown): value is { data: unknown; meta?: PaginationMeta } =>
   typeof value === 'object' && value !== null && 'data' in value;
 
-const doFetch = async <T>(
+const doFetchEnvelope = async <T>(
   path: string,
   options: RequestOptions,
   accessToken: string | null,
   isRetry = false,
-): Promise<T> => {
+): Promise<{ data: T; meta?: PaginationMeta }> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.auth !== false && accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
@@ -55,7 +67,7 @@ const doFetch = async <T>(
   if (response.status === 401 && options.auth !== false && !isRetry) {
     const newToken = await refreshAccessToken();
     if (newToken) {
-      return doFetch<T>(path, options, newToken, true);
+      return doFetchEnvelope<T>(path, options, newToken, true);
     }
   }
 
@@ -77,7 +89,12 @@ const doFetch = async <T>(
     throw new Error('Unexpected response shape');
   }
 
-  return payload.data as T;
+  return { data: payload.data as T, meta: payload.meta };
+};
+
+const doFetch = async <T>(path: string, options: RequestOptions, accessToken: string | null): Promise<T> => {
+  const envelope = await doFetchEnvelope<T>(path, options, accessToken);
+  return envelope.data;
 };
 
 type Options = Omit<RequestOptions, 'method' | 'body'>;
@@ -85,6 +102,14 @@ type Options = Omit<RequestOptions, 'method' | 'body'>;
 export const apiClient = {
   get: <T>(path: string, options: Options = {}) =>
     doFetch<T>(path, { ...options, method: 'GET' }, useAuthTokenStore.getState().accessToken),
+  getPaginated: async <T>(path: string, options: Options = {}): Promise<PaginatedResult<T>> => {
+    const envelope = await doFetchEnvelope<T[]>(
+      path,
+      { ...options, method: 'GET' },
+      useAuthTokenStore.getState().accessToken,
+    );
+    return { items: envelope.data, meta: envelope.meta ?? { page: 1, limit: envelope.data.length, total: envelope.data.length, hasMore: false } };
+  },
   post: <T>(path: string, body?: unknown, options: Options = {}) =>
     doFetch<T>(
       path,

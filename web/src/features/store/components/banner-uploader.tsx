@@ -11,7 +11,7 @@ export const BannerUploader = ({ store }: { store: Store }) => {
   const queryClient = useQueryClient();
 
   return (
-    <ImageUploader
+    <ImageUploader<Store>
       label="Banner"
       endpoint="/stores/me/banner"
       maxBytes={BANNER_MAX_BYTES}

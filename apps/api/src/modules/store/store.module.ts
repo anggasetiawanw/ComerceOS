@@ -51,6 +51,13 @@ import { SocialLinksController } from './presentation/http/social-links.controll
     StoreUploadService,
     StoreOwnerGuard,
   ],
-  exports: [STORE_REPOSITORY, StoreService, StoreSettingsService, SocialLinkService, StoreLookupService],
+  exports: [
+    STORE_REPOSITORY,
+    StoreService,
+    StoreSettingsService,
+    SocialLinkService,
+    StoreLookupService,
+    StoreOwnerGuard,
+  ],
 })
 export class StoreModule {}

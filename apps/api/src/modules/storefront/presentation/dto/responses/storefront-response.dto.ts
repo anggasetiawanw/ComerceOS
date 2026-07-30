@@ -1,5 +1,6 @@
 import { StorefrontResult } from '../../../application/services/storefront.service';
 import { StorefrontSocialLinkResponseDto } from './storefront-social-link-response.dto';
+import { StorefrontProductResponseDto } from './storefront-product-response.dto';
 
 export class StorefrontResponseDto {
   id!: string;
@@ -11,6 +12,7 @@ export class StorefrontResponseDto {
   theme!: Record<string, string> | null;
   plan!: string;
   socialLinks!: StorefrontSocialLinkResponseDto[];
+  products!: StorefrontProductResponseDto[];
 
   static fromResult(result: StorefrontResult): StorefrontResponseDto {
     const dto = new StorefrontResponseDto();
@@ -23,6 +25,7 @@ export class StorefrontResponseDto {
     dto.theme = result.theme;
     dto.plan = result.plan;
     dto.socialLinks = result.socialLinks.map((link) => StorefrontSocialLinkResponseDto.fromResult(link));
+    dto.products = result.products.map((product) => StorefrontProductResponseDto.fromResult(product));
     return dto;
   }
 }

@@ -15,6 +15,7 @@ import { JwtAuthGuard } from './shared/presentation/guards/jwt-auth.guard';
 import { RolesGuard } from './shared/presentation/guards/roles.guard';
 import { IdentityModule } from './modules/identity/identity.module';
 import { StoreModule } from './modules/store/store.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 import { StorefrontModule } from './modules/storefront/storefront.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { StorefrontModule } from './modules/storefront/storefront.module';
     AppThrottlerModule,
     HealthModule,
     StoreModule,
+    CatalogModule,
     IdentityModule,
     StorefrontModule,
   ],

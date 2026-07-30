@@ -1,14 +1,18 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { Paginated, PaginationMeta } from '../dto/paginated.dto';
 
-interface Envelope<T> {
-  data: T;
+interface Envelope {
+  data: unknown;
+  meta?: PaginationMeta;
 }
 
 @Injectable()
-export class TransformInterceptor<T> implements NestInterceptor<T, Envelope<T>> {
-  intercept(_context: ExecutionContext, next: CallHandler<T>): Observable<Envelope<T>> {
-    return next.handle().pipe(map((data) => ({ data })));
+export class TransformInterceptor implements NestInterceptor<unknown, Envelope> {
+  intercept(_context: ExecutionContext, next: CallHandler<unknown>): Observable<Envelope> {
+    return next.handle().pipe(
+      map((data) => (data instanceof Paginated ? { data: data.items, meta: data.meta } : { data })),
+    );
   }
 }

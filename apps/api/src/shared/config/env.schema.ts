@@ -53,6 +53,9 @@ export const envSchema = z.object({
 
   UPLOAD_MAX_AVATAR_BYTES: z.coerce.number().int().positive().default(2_097_152),
   UPLOAD_MAX_BANNER_BYTES: z.coerce.number().int().positive().default(5_242_880),
+  UPLOAD_MAX_PRODUCT_IMAGE_BYTES: z.coerce.number().int().positive().default(5_242_880),
+  UPLOAD_MAX_DIGITAL_FILE_BYTES: z.coerce.number().int().positive().default(52_428_800),
+  DIGITAL_FILE_MAX_DOWNLOADS: z.coerce.number().int().positive().default(3),
 
   USERNAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   USERNAME_RESERVATION_DAYS: z.coerce.number().int().min(0).default(90),

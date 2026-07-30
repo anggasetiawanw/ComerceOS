@@ -146,6 +146,18 @@ export class AppConfigService {
     return this.config.get('UPLOAD_MAX_BANNER_BYTES', { infer: true });
   }
 
+  get uploadMaxProductImageBytes(): number {
+    return this.config.get('UPLOAD_MAX_PRODUCT_IMAGE_BYTES', { infer: true });
+  }
+
+  get uploadMaxDigitalFileBytes(): number {
+    return this.config.get('UPLOAD_MAX_DIGITAL_FILE_BYTES', { infer: true });
+  }
+
+  get digitalFileMaxDownloads(): number {
+    return this.config.get('DIGITAL_FILE_MAX_DOWNLOADS', { infer: true });
+  }
+
   get usernameChangeCooldownDays(): number {
     return this.config.get('USERNAME_CHANGE_COOLDOWN_DAYS', { infer: true });
   }
