@@ -56,7 +56,7 @@ const ProductPage = async ({ params }: ProductPageProps) => {
           <p className="whitespace-pre-line text-sm text-muted-foreground">{product.description}</p>
         )}
       </div>
-      <BuyWhatsappButtons />
+      <BuyWhatsappButtons productId={product.id} />
     </div>
   );
 };

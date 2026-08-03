@@ -34,6 +34,7 @@ interface RequestOptions {
   body?: unknown;
   /** Attach the bearer token and retry once through single-flight refresh on 401. Default true. */
   auth?: boolean;
+  headers?: Record<string, string>;
 }
 
 const isProblemDetail = (value: unknown): value is ProblemDetail =>
@@ -52,7 +53,7 @@ const doFetchEnvelope = async <T>(
   accessToken: string | null,
   isRetry = false,
 ): Promise<{ data: T; meta?: PaginationMeta }> => {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers };
   if (options.auth !== false && accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
   }

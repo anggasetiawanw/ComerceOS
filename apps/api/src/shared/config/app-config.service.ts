@@ -190,4 +190,52 @@ export class AppConfigService {
       this.supabaseBucketPrivate.length > 0
     );
   }
+
+  get midtransServerKey(): string {
+    return this.config.get('MIDTRANS_SERVER_KEY', { infer: true });
+  }
+
+  get midtransClientKey(): string {
+    return this.config.get('MIDTRANS_CLIENT_KEY', { infer: true });
+  }
+
+  get midtransIsProduction(): boolean {
+    return this.config.get('MIDTRANS_IS_PRODUCTION', { infer: true });
+  }
+
+  get midtransNgrokDev(): string {
+    return this.config.get('MIDTRANS_NGROK_DEV', { infer: true });
+  }
+
+  get isMidtransConfigured(): boolean {
+    return this.midtransServerKey.length > 0 && this.midtransClientKey.length > 0;
+  }
+
+  get orderExpiryHours(): number {
+    return this.config.get('ORDER_EXPIRY_HOURS', { infer: true });
+  }
+
+  get checkoutThrottleLimit(): number {
+    return this.config.get('CHECKOUT_THROTTLE_LIMIT', { infer: true });
+  }
+
+  get checkoutThrottleTtlSeconds(): number {
+    return this.config.get('CHECKOUT_THROTTLE_TTL_SECONDS', { infer: true });
+  }
+
+  get idempotencyTtlHours(): number {
+    return this.config.get('IDEMPOTENCY_TTL_HOURS', { infer: true });
+  }
+
+  get deliveryUrlTtlSeconds(): number {
+    return this.config.get('DELIVERY_URL_TTL_SECONDS', { infer: true });
+  }
+
+  get outboxRelayIntervalMs(): number {
+    return this.config.get('OUTBOX_RELAY_INTERVAL_MS', { infer: true });
+  }
+
+  get outboxRelayBatchSize(): number {
+    return this.config.get('OUTBOX_RELAY_BATCH_SIZE', { infer: true });
+  }
 }

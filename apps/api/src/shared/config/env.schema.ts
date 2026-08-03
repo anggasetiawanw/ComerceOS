@@ -59,6 +59,22 @@ export const envSchema = z.object({
 
   USERNAME_CHANGE_COOLDOWN_DAYS: z.coerce.number().int().min(0).default(30),
   USERNAME_RESERVATION_DAYS: z.coerce.number().int().min(0).default(90),
+
+  MIDTRANS_SERVER_KEY: z.string().optional().default(''),
+  MIDTRANS_CLIENT_KEY: z.string().optional().default(''),
+  MIDTRANS_IS_PRODUCTION: z.coerce.boolean().default(false),
+  MIDTRANS_NGROK_DEV: z.string().optional().default(''),
+
+  ORDER_EXPIRY_HOURS: z.coerce.number().int().positive().default(24),
+
+  CHECKOUT_THROTTLE_LIMIT: z.coerce.number().int().positive().default(10),
+  CHECKOUT_THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+
+  IDEMPOTENCY_TTL_HOURS: z.coerce.number().int().positive().default(24),
+  DELIVERY_URL_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+
+  OUTBOX_RELAY_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  OUTBOX_RELAY_BATCH_SIZE: z.coerce.number().int().positive().default(50),
 });
 
 export type Env = z.infer<typeof envSchema>;

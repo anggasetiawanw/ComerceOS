@@ -43,6 +43,13 @@ describe('Store (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.digitalDelivery.deleteMany();
+    await prisma.outboxEvent.deleteMany();
+    await prisma.idempotencyKey.deleteMany();
+    await prisma.webhookEvent.deleteMany();
+    await prisma.orderStatusHistory.deleteMany();
+    await prisma.orderItem.deleteMany();
+    await prisma.order.deleteMany();
     await prisma.digitalFile.deleteMany();
     await prisma.product.deleteMany();
     await prisma.socialLink.deleteMany();

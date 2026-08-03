@@ -58,7 +58,7 @@ jobs:
       - run: pnpm run test
 
   build:
-    name: Build (api, worker, web)
+    name: Build (api, contracts, web)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
 
       - run: pnpm exec prisma generate
 
-      - name: Build all workspaces (api, worker, contracts, web)
+      - name: Build all workspaces (api, contracts, web)
         run: pnpm run build
 
       - name: Docker build api

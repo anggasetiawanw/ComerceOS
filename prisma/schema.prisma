@@ -43,6 +43,43 @@ enum ProductStatus {
   archived
 }
 
+enum OrderSource {
+  self_checkout
+  manual
+}
+
+enum OrderStatus {
+  pending_payment
+  paid
+  holding
+  released
+  disputed
+  refunded
+  cancelled
+  expired
+}
+
+enum StatusActorType {
+  system
+  seller
+  buyer
+  admin
+}
+
+enum WebhookEventStatus {
+  received
+  processed
+  failed
+  ignored
+}
+
+enum OutboxStatus {
+  pending
+  processing
+  published
+  failed
+}
+
 // Identity — Sprint 2. IDs are UUIDv7 generated in application code
 // (shared/kernel/uuid.ts), never a database default.
 model User {
@@ -60,6 +97,8 @@ model User {
   refreshTokens      RefreshToken[]
   verificationTokens VerificationToken[]
   store              Store?
+  orders             Order[]
+  orderStatusChanges OrderStatusHistory[]
 
   @@map("users")
 }
@@ -122,6 +161,7 @@ model Store {
   owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   socialLinks SocialLink[]
   products    Product[]
+  orders      Order[]
 
   @@map("stores")
 }
@@ -161,6 +201,7 @@ model Product {
 
   store        Store         @relation(fields: [storeId], references: [id], onDelete: Restrict)
   digitalFiles DigitalFile[]
+  orderItems   OrderItem[]
 
   @@unique([storeId, slug])
   @@index([storeId, status])
@@ -185,4 +226,179 @@ model DigitalFile {
 
   @@index([productId])
   @@map("digital_files")
+}
+
+// Ordering — Sprint 5. IDs are UUIDv7 generated in application code. Money
+// columns are BIGINT rupiah integers (AD-04); platform_fee_rate stays a
+// numeric(5,4) rate, not money. order_number is a globally unique
+// human-readable code (not a per-store counter) because Midtrans requires
+// uniqueness per merchant, not per store. orders.store_id / orders.buyer_id
+// are ON DELETE RESTRICT — the financial record must survive
+// (.docs/06-database-roadmap.md §4). No ledger writes yet: holding_until is
+// computed and status moves to 'holding', but balance_transactions and
+// stores.holding_balance stay untouched until Sprint 6.
+model Order {
+  id                    String      @id
+  orderNumber           String      @unique @map("order_number")
+  storeId               String      @map("store_id")
+  buyerId               String      @map("buyer_id")
+  source                OrderSource
+  status                OrderStatus @default(pending_payment)
+  subtotal              BigInt
+  discountCode          String?     @map("discount_code")
+  discountAmount        BigInt      @default(0) @map("discount_amount")
+  total                 BigInt
+  platformFeeRate       Decimal     @map("platform_fee_rate") @db.Decimal(5, 4)
+  platformFeeAmount     BigInt      @map("platform_fee_amount")
+  paymentMethod         String?     @map("payment_method")
+  midtransTransactionId String?     @map("midtrans_transaction_id")
+  shippingAddress       Json?       @map("shipping_address")
+  paidAt                DateTime?   @map("paid_at")
+  holdingUntil          DateTime?   @map("holding_until")
+  releasedAt            DateTime?   @map("released_at")
+  createdAt             DateTime    @default(now()) @map("created_at")
+
+  store         Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  buyer         User                 @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  webhookEvents WebhookEvent[]
+
+  @@index([storeId, createdAt])
+  @@index([storeId, status, createdAt])
+  @@index([buyerId, createdAt])
+  @@index([midtransTransactionId])
+  @@map("orders")
+}
+
+// order_items snapshot product data at purchase time so a later product edit
+// (or HPP change) never alters a historical order. order_items.product_id is
+// ON DELETE RESTRICT — products archive, never hard-delete
+// (.docs/06-database-roadmap.md §4).
+model OrderItem {
+  id                  String   @id
+  orderId             String   @map("order_id")
+  productId           String   @map("product_id")
+  productNameSnapshot String   @map("product_name_snapshot")
+  productTypeSnapshot String   @map("product_type_snapshot")
+  priceSnapshot       BigInt   @map("price_snapshot")
+  hppSnapshot         BigInt?  @map("hpp_snapshot")
+  qty                 Int      @default(1)
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  deliveries DigitalDelivery[]
+
+  @@index([orderId])
+  @@index([productId, createdAt])
+  @@map("order_items")
+}
+
+// order_status_history complements balance_transactions (money) with a
+// record of every state transition — from_status/to_status are stored as
+// text, not the OrderStatus enum, so history survives a future enum change.
+model OrderStatusHistory {
+  id            String          @id
+  orderId       String          @map("order_id")
+  fromStatus    String?         @map("from_status")
+  toStatus      String          @map("to_status")
+  changedByType StatusActorType @map("changed_by_type")
+  changedById   String?         @map("changed_by_id")
+  reason        String?
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy User? @relation(fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+// webhook_events is the raw record of every Midtrans notification, persisted
+// before interpretation. Deliberately no unique constraint on
+// (source, transaction_id, transaction_status) — a duplicate delivery must be
+// recorded and then marked 'ignored', never rejected at the database and
+// lost (.docs/09-payments-ledger.md §3). transaction_id/transaction_status
+// are extracted into real columns (rather than an expression index on the
+// jsonb payload) so the dedup lookup is a plain indexed query.
+model WebhookEvent {
+  id                String             @id
+  source            String
+  eventType         String?            @map("event_type")
+  payload           Json
+  orderId           String?            @map("order_id")
+  transactionId     String?            @map("transaction_id")
+  transactionStatus String?            @map("transaction_status")
+  status            WebhookEventStatus @default(received)
+  errorMessage      String?            @map("error_message")
+  receivedAt        DateTime           @default(now()) @map("received_at")
+  processedAt       DateTime?          @map("processed_at")
+
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([source, transactionId])
+  @@index([status, receivedAt])
+  @@map("webhook_events")
+}
+
+// digital_deliveries — one row per (order_item, digital_file) so a
+// multi-file product provisions independently per file. The signed URL
+// itself is never persisted; it is generated on demand and expires
+// separately from the download entitlement (.docs/06-database-roadmap.md
+// §2.7): expires_at bounds the signed URL window, not the buyer's right to
+// redownload while download_count < max_downloads.
+model DigitalDelivery {
+  id            String   @id
+  orderItemId   String   @map("order_item_id")
+  filePath      String   @map("file_path")
+  downloadCount Int      @default(0) @map("download_count")
+  maxDownloads  Int      @map("max_downloads")
+  expiresAt     DateTime @map("expires_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@unique([orderItemId, filePath])
+  @@map("digital_deliveries")
+}
+
+// outbox_events — the transactional outbox (AD-05). A relay in the worker
+// polls (status, available_at), publishes to BullMQ, and marks published.
+// The (status, available_at) index is the relay's only query and the
+// hottest small query in the system (.docs/06-database-roadmap.md §2.11).
+model OutboxEvent {
+  id            String       @id
+  aggregateType String       @map("aggregate_type")
+  aggregateId   String       @map("aggregate_id")
+  eventType     String       @map("event_type")
+  payload       Json
+  status        OutboxStatus @default(pending)
+  attempts      Int          @default(0)
+  availableAt   DateTime     @default(now()) @map("available_at")
+  publishedAt   DateTime?    @map("published_at")
+  error         String?
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+}
+
+// idempotency_keys backs the HTTP Idempotency-Key layer for POST /checkout
+// (and, from Sprint 7, POST /withdrawals). A replay of (key, user_id) with
+// the same request hash returns the stored response; a different hash is a
+// 409 Conflict (.docs/09-payments-ledger.md §3).
+model IdempotencyKey {
+  id             String   @id
+  key            String
+  userId         String   @map("user_id")
+  endpoint       String
+  requestHash    String   @map("request_hash")
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+  expiresAt      DateTime @map("expires_at")
+
+  @@unique([key, userId])
+  @@map("idempotency_keys")
 }

@@ -274,24 +274,115 @@ Decisions and drift from the docs, recorded here rather than silently:
 ### Sprint 5 — Transaction core ⚠️ highest risk
 **Goal:** a buyer can pay, and the system knows.
 
-- [ ] Migrations 005, 006, 011: orders, items, status history, webhook events, outbox, idempotency
-- [ ] `Order` aggregate with the full state machine and transition policy
-- [ ] `OrderFactory.fromCheckout`, `OrderPricingService`, `HoldingPeriodCalculator`
-- [ ] Checkout quote + create with `Idempotency-Key`
-- [ ] Midtrans Snap client, token creation, sandbox wiring
-- [ ] Webhook controller: signature verification, raw persist, fast `200`, enqueue
-- [ ] Webhook processor: dedup, status mapping, `MarkOrderPaid`
-- [ ] Outbox table, service, and relay in the worker
-- [ ] BullMQ setup, queues, `expire-orders` job
-- [ ] Digital delivery provisioning + signed URL issuance + download counting
-- [ ] Frontend: checkout page, Snap integration, status page with polling
-- [ ] Tests: full state machine matrix, webhook idempotency, outbox durability
+- [x] Migrations 005, 006, 009, 011: orders, items, status history, webhook events, digital deliveries,
+  outbox, idempotency — migration 009 pulled forward from Sprint 6, see drift below
+- [x] `Order` aggregate with the full state machine and transition policy
+- [x] `OrderFactory.fromCheckout`, `OrderPricingService`, `HoldingPeriodCalculator`
+- [x] Checkout quote + create with `Idempotency-Key`
+- [x] Midtrans Snap client, token creation, sandbox wiring — plus a dev stub gateway, see drift below
+- [x] Webhook controller: signature verification, raw persist, fast `200`, enqueue
+- [x] Webhook processor: dedup, status mapping, `MarkOrderPaid`
+- [x] Outbox table, service, and relay in the worker
+- [x] BullMQ setup, queues, `expire-orders` job
+- [x] Digital delivery provisioning + signed URL issuance + download counting
+- [x] Frontend: checkout page, Snap integration, status page with polling
+- [x] Tests: state machine, webhook idempotency, outbox durability — not the full exhaustive matrix,
+  see drift below
 
 **Deliverable:** end-to-end sandbox purchase of a digital product, with the file downloadable.
 
 > **This sprint carries the most risk in the project.** If anything slips, it is this one. Everything
 > downstream depends on the order model being right, so under-delivering here is far cheaper than
 > rushing it.
+
+**Status: done.** Verified 2026-08-03 — 53 API unit suites (476 tests, including all 19 actor/transition
+combinations that are legal and all 8 explicitly-forbidden state-machine transitions) pass, plus the new
+`ordering.int-spec.ts` integration suite (6 tests, real Postgres + Redis, `STORAGE_UPLOADER` overridden
+with an in-memory fake so the suite has no external Supabase dependency): checkout creates
+`pending_payment` with the correct total and a snapshotted `platform_fee_rate`; a signed-and-verified
+webhook settles the order to `paid` → `holding` with the correct `holding_until` and exactly the expected
+number of status-history rows; `OrderPaid` lands in and is claimable from the outbox; a duplicate webhook
+delivery is marked `ignored` with no extra transition; a late webhook on an already-`expired` order is
+rejected; digital delivery provisioning is idempotent on redelivery; a download issues a signed URL and
+increments the counter; `Idempotency-Key` replay and conflict semantics both hold; a buyer cannot read
+another buyer's order. The three other existing integration suites (`identity`, `store`, `storefront` —
+28 tests) still pass after adding the new tables to their cleanup chains. `catalog.int-spec.ts` was
+already failing 5/14 tests before this sprint's changes, independent of anything here — the `.env` in
+this environment points `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` at a real Supabase project whose
+`nagihin-private`/`nagihin-public` buckets return "Bucket not found"; confirmed by running
+`catalog.int-spec.ts` unmodified and seeing the identical failure on `DigitalFileService.upload`. Not a
+regression from this sprint and not fixed here — it needs the buckets provisioned or the environment
+pointed at the filesystem adapter, either of which is outside a single sprint's scope.
+`pnpm run lint`, `pnpm run typecheck`, and `pnpm run build` are clean for both `apps/api` and `web`. Live
+smoke test: booted both `node dist/main.js` (HTTP API) and `node dist/worker.main.js` (worker) against
+the local Docker Postgres/Redis with no Midtrans keys configured — both connect cleanly, every
+checkout/payments/delivery route maps, and the worker logs confirm the outbox relay, `expire-orders`, and
+job consumers registered with the stub Snap gateway active.
+
+A real bug only surfaced under the integration suite: BullMQ (v6) rejects a `:` character in a custom
+job or job-scheduler id, and both `webhook-${event.id}` (was `webhook:${event.id}`) in
+`WebhookIngestionService` and the two `REPEATABLE_JOB_IDS` values used `:` as a separator. Fixed to `-`
+throughout `shared/infrastructure/queue/`; the unit suite alone would never have caught this since it
+never exercises a real `Queue.add()` call.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- **The worker is a second entrypoint into `@nagihin/api`, not the separate `apps/worker` package the
+  docs describe.** `apps/api/src/worker.main.ts` boots `WorkerModule` via
+  `NestFactory.createApplicationContext`; `apps/worker` is deleted, and `docker/Dockerfile.worker` now
+  builds `@nagihin/api` and runs `dist/worker.main.js`. Still a separate process/container — the
+  event-loop-isolation rationale in `.docs/02-architecture.md` §6 is exactly why a slow PDF render must
+  never delay a webhook — it just no longer duplicates config/Prisma/Redis wiring to get it. BullMQ
+  `@Processor` classes live in per-module `*-jobs.module.ts` files (`OrderingJobsModule`,
+  `PaymentsJobsModule`, `DeliveryJobsModule`, `OutboxRelayModule`) imported only by `WorkerModule`, so
+  importing the plain feature module into the HTTP API (for its controllers) never also starts a
+  competing job consumer there.
+- **Migration 009 (`digital_deliveries`) is pulled forward from Sprint 6 into this sprint's migration
+  005/006/009/011 sequence**, matching the scope decision to ship "the file downloadable" as stated in
+  the deliverable rather than deferring digital delivery per the risk register's stated fallback.
+- **Midtrans is wired through a `PaymentGateway` port** (`ordering/application/ports/payment-gateway.port.ts`,
+  owned by the consumer — same dependency-inversion direction as identity's `STORE_LOOKUP`) with two
+  adapters: `MidtransSnapGateway` (real Snap API via plain `fetch`, no SDK) and `StubSnapGateway`,
+  selected by `AppConfigService.isMidtransConfigured`. `MIDTRANS_SERVER_KEY`/`MIDTRANS_CLIENT_KEY` blank
+  (as they are in this environment) selects the stub, whose tokens are prefixed `stub-` so the frontend
+  can skip loading the real Snap.js SDK. A dev-only `POST /payments/dev/simulate-webhook` (404s outside
+  development or once real keys are set) builds a signature the same way ingestion verifies it — both
+  read `config.midtransServerKey`, blank in stub mode — so it exercises the real signature-verification
+  code path rather than bypassing it.
+- **No ledger and no stock decrement this sprint, as scoped.** `markPaid` moves `paid → holding` and
+  computes `holding_until` via `HoldingPeriodCalculator` (which reuses `SettlementPolicy.effectiveHoldUntil`
+  from the store module, a pure cross-module VO import — no `balance_transactions` row and no
+  `stores.holding_balance` write; that consumer arrives with Sprint 6, reading `OrderPaid` off the
+  outbox. Checkout validates stock but does not decrement it (Sprint 11, `StockReservationService` still
+  doesn't exist).
+- **`webhook_events` gained `transaction_id`/`transaction_status` as real nullable columns**, extracted
+  at ingestion, instead of an expression index on the jsonb payload — the Layer-1 dedup lookup
+  (`.docs/09-payments-ledger.md` §3) is a plain indexed query rather than a `payload->>'...'` expression.
+- **Partial and expression indexes from `.docs/06-database-roadmap.md` §3 are plain Prisma `@@index`
+  entries without the `WHERE` predicate** (e.g. `orders(status, holding_until)` has no
+  `WHERE status = 'holding'`) — Prisma cannot express partial indexes, and hand-appended raw-SQL
+  partial indexes would show as drift on every future `prisma migrate dev`. A sizing optimization, not
+  a plan change, worth revisiting once order volume actually warrants it.
+- **`OrderNumber` format is `ORD-{yyMMdd}-{6-char base32-ish}`, globally unique**, not per-store —
+  unspecified in every doc, but Midtrans requires `order_id` uniqueness per merchant account (all stores
+  share one Midtrans account under Model 1 merchant-of-record), so a per-store counter would collide.
+- **`GET /checkout/:orderNumber/status`, not `:orderId`** as `.docs/05-api-roadmap.md` §6.1 lists — it's
+  keyed by what the Snap `callbacks.finish` URL and the `/checkout/[orderNumber]` route already carry,
+  and it serves both the checkout and status pages instead of adding a second `orderId`-keyed endpoint.
+  `GET /payments/orders/:orderId` (P1, payment status) was skipped as redundant with it.
+- **`/me/orders` is offset paginated, not cursor paginated** as `.docs/05-api-roadmap.md` §17 specifies
+  for orders — reuses the existing `Paginated`/`PaginationQueryDto` machinery rather than inventing a
+  second pagination contract for one buyer-facing, inherently low-volume endpoint. Cursor pagination
+  stays the plan for the seller-facing `/orders` list, deferred this sprint along with `DataTable` and
+  `Timeline` — no seller order pages shipped, so nothing needs cursor pagination or row selection yet.
+- **`digital_deliveries` gained `@@unique([orderItemId, filePath])`** — a product can carry up to 5
+  digital files, so the real grain is one row per file, and this unique key is what makes
+  `provision-digital-delivery` idempotent on redelivery.
+- Full state-machine and pricing coverage is real (14/14 legal transitions, all explicitly-forbidden
+  ones, holding-period floor incl. mixed-basket max-tier and Midtrans-floor cases, fee rounding, discount
+  clamping, signature verification, status mapping, idempotency replay/conflict) but is not the doc's
+  full row-by-row test matrix in `.docs/08-order-state-machine.md` §7 — `resolveDispute`/refund-recovery
+  paths are unit-tested on the aggregate but have no application-service callers or integration coverage
+  yet, since nothing in this sprint invokes them (dispute/refund flows are Sprint 11).
 
 ---
 
@@ -409,18 +500,20 @@ balances.
 ### Backend
 
 **Foundation**
-- [x] pnpm workspace, `apps/api`, `apps/worker`, `packages/contracts`
+- [x] pnpm workspace, `apps/api`, `packages/contracts` — `apps/worker` merged into `apps/api` as a
+  second entrypoint (`src/worker.main.ts`) in Sprint 5; see that sprint's drift notes
 - [x] Typed config module with boot-time env validation
 - [x] Pino logger with request correlation IDs
 - [x] Global `ValidationPipe`, `DomainExceptionFilter`, `PrismaExceptionFilter`
 - [x] `Result<T,E>`, base entity/aggregate/VO/domain-event classes
 - [x] `Money` value object. `Email`/`Phone`/`Username`/`Slug` deferred to the modules that need them (Sprint 2+)
 - [x] `TransactionManager` with AsyncLocalStorage (wired, unused until the first repository lands)
-- [x] `PrismaService` with pooler/direct connection split (api uses `DATABASE_URL`, worker uses `DIRECT_DATABASE_URL`)
+- [x] `PrismaService` with pooler/direct connection split — moot since Sprint 5's worker merge: both
+  entrypoints now share one `PrismaService` on `DATABASE_URL`
 - [x] Redis module — typed cache wrapper deferred until a consumer needs it
-- [ ] BullMQ registration, queue names, typed payloads — Sprint 5
-- [ ] Outbox service, table, and relay — Sprint 5
-- [ ] Idempotency store + interceptor — Sprint 5
+- [x] BullMQ registration, queue names, typed payloads
+- [x] Outbox service, table, and relay
+- [x] Idempotency store + interceptor
 - [x] Supabase Storage service (upload, signed URL) — plus a filesystem dev adapter and a null
   adapter behind the same `StorageUploader` port
 - [x] Health indicators: Postgres, Redis, Storage
@@ -444,23 +537,28 @@ balances.
 - [x] Storefront read repository + cache invalidation on events
 
 **Ordering**
-- [ ] `Order` aggregate with all guarded transitions
-- [ ] `OrderTransitionPolicy` as a data table
-- [ ] `HoldingPeriodCalculator` (max risk tier + Midtrans floor)
-- [ ] `OrderPricingService`
-- [ ] `OrderFactory` (checkout + manual)
-- [ ] `Inquiry` aggregate
-- [ ] Command handlers for all 14 transitions
-- [ ] `OrderReadRepository` with raw SQL
+- [x] `Order` aggregate with all guarded transitions (`markPaid`/`cancel`/`expire`/`release`/`dispute`/
+  `refund` — `release`/`dispute`/`refund` are unit-tested but have no application-service caller yet;
+  dispute/refund flows land in Sprint 11)
+- [x] `OrderTransitionPolicy` as a data table
+- [x] `HoldingPeriodCalculator` (max risk tier + Midtrans floor)
+- [x] `OrderPricingService`
+- [x] `OrderFactory` (checkout only — manual creation is Sprint 9)
+- [ ] `Inquiry` aggregate — Sprint 9
+- [x] Application services for the transitions this sprint calls: `CheckoutService`, `MarkOrderPaidService`,
+  `CancelOrderService`, `ExpireOrderService` (not one handler per transition — see the module's
+  `application/services/` convention, matching the rest of the codebase's style, not a CQRS command bus)
+- [x] `OrderReadRepository` with raw SQL (buyer-facing list only; the seller-facing list is deferred with
+  `/dashboard/pesanan`)
 
 **Payments**
-- [ ] Midtrans Snap + Core API client
-- [ ] `SignatureVerifier` (constant-time compare)
-- [ ] Webhook controller + ingestion service
-- [ ] `PaymentStatusMapper` incl. `capture`+`challenge`
-- [ ] Webhook processor with dedup
-- [ ] Refund service
-- [ ] Reconciliation service (three-way match)
+- [x] Midtrans Snap client (Core API / refunds deferred to when refunds ship, Sprint 11)
+- [x] `SignatureVerifier` (constant-time compare)
+- [x] Webhook controller + ingestion service
+- [x] `PaymentStatusMapper` incl. `capture`+`challenge`
+- [x] Webhook processor with dedup
+- [ ] Refund service — Sprint 11
+- [ ] Reconciliation service (three-way match) — Sprint 12
 
 **Ledger**
 - [ ] `StoreBalance` aggregate with row locking
@@ -471,8 +569,8 @@ balances.
 - [ ] Platform revenue + seller liability calculators
 
 **Supporting**
-- [ ] Invoice number generator, renderer, delivery service
-- [ ] Digital delivery service, signed URL issuer, download policy
+- [ ] Invoice number generator, renderer, delivery service — Sprint 6
+- [x] Digital delivery service, signed URL issuer, download policy
 - [ ] `StoreBuyer` service with recompute-on-event
 - [ ] `Promotion` aggregate, validator, calculator
 - [ ] `NotificationChannel` port, email adapter, WhatsApp adapter, dispatcher
@@ -490,19 +588,20 @@ balances.
 - [x] Auth store (Zustand, memory only), middleware guard
 - [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard and storefront shells
   done; marketing, admin, buyer still placeholders
-- [ ] `DataTable` with responsive card fallback — deferred to Sprint 5 (orders need cursor
-  pagination + row selection); the product list uses a card layout instead
+- [ ] `DataTable` with responsive card fallback — still deferred: no seller order list shipped this
+  sprint either (`/dashboard/pesanan` is Sprint 6+), so there is still nothing that needs cursor
+  pagination + row selection; the buyer-facing order/delivery lists use the same card layout
 - [x] `EmptyState` / `ErrorState` / skeleton set
 - [x] `MoneyDisplay`, `MoneyInput` (bigint-safe)
-- [ ] `OrderStatusBadge`, `Timeline`, `HoldingCountdown`, `BalanceCard`
+- [x] `OrderStatusBadge` — `Timeline`, `HoldingCountdown`, `BalanceCard` wait for Sprint 6 seller pages
 - [x] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` genericized
   in Sprint 4 (was hardcoded to `Store`); `FileUploader` done; `PhoneInput` lands with Sprint 9
-- [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — product page done; Beli is
-  visually present but inert until Sprint 5's checkout, Tanya inert until Sprint 9 as documented
-- [ ] Checkout + Snap integration + status polling
+- [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — Beli now creates a real order and
+  redirects to checkout; Tanya stays inert until Sprint 9 as documented
+- [x] Checkout + Snap integration + status polling
 - [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko` and `pengaturan`
-  done, the rest land sprint-by-sprint
-- [ ] Buyer `/akun` pages
+  done, the rest land sprint-by-sprint (no seller order pages this sprint — see drift notes)
+- [x] Buyer `/akun` pages — order history, order detail, downloads; profile settings still a placeholder
 - [ ] Admin pages
 - [ ] `InvoicePreview` shared with the PDF renderer
 - [ ] Charts (dynamically imported)
@@ -510,7 +609,8 @@ balances.
 
 ### DevOps
 
-- [x] `Dockerfile.api`, `Dockerfile.worker` (multi-stage, non-root, Node 22)
+- [x] `Dockerfile.api`, `Dockerfile.worker` (multi-stage, non-root, Node 22) — both build `@nagihin/api`
+  since Sprint 5's worker merge; `Dockerfile.worker` runs `dist/worker.main.js`
 - [x] `docker-compose.yml` for local development
 - [x] `.env.example` with every Sprint 1 variable documented (remaining variables land with the modules that need them)
 - [x] GitHub Actions: lint, typecheck, unit, build. Integration job deferred — Sprint 2 (first Postgres-backed module)
@@ -525,29 +625,38 @@ balances.
 
 ### Database
 
-- [ ] Migrations 001–019 in order (001–004 done — 004 adds `products`, `digital_files`)
-- [ ] All check constraints from [06 §4](./06-database-roadmap.md#4-constraints)
-- [ ] All indexes from [06 §3](./06-database-roadmap.md#3-indexes)
+- [ ] Migrations 001–019 in order (001–004, 005, 006, 009, 011 done — 009 pulled forward from Sprint 6;
+  007/008/010 (ledger, invoicing, `store_buyers`) still land in Sprint 6, 012+ later)
+- [x] Check constraints from [06 §4](./06-database-roadmap.md#4-constraints) for the tables this sprint
+  added (orders, order_items, digital_deliveries) — partial-index predicates are plain non-partial
+  `@@index` entries, see this sprint's drift notes
+- [x] Indexes from [06 §3](./06-database-roadmap.md#3-indexes) for the tables this sprint added, same
+  partial-index caveat
 - [x] `seed/base.ts` (idempotent, production-safe) — no-op stub until Sprint 3 needs reserved usernames
 - [ ] `seed/dev.ts` generating data through domain commands
 - [ ] `seed/test.ts` minimal fixtures
 
 ### Testing
 
-- [ ] Unit: every value object
-- [ ] Unit: `Order` state machine — all 14 legal + all illegal transitions
-- [ ] Unit: `HoldingPeriodCalculator` incl. mixed baskets and the Midtrans floor
-- [ ] Unit: `OrderPricingService`, `DiscountCalculator` clamping
-- [ ] Unit: ledger invariants
-- [ ] Integration: repositories against a real Postgres container
-- [ ] Integration: webhook idempotency (duplicate delivery)
-- [ ] Integration: balance concurrency (parallel withdrawals)
-- [ ] Integration: outbox durability (publish failure → retry)
-- [ ] Integration: **cross-tenant isolation for every seller endpoint**
-- [ ] Integration: gross profit never joins `products`
-- [ ] E2E: signup → store → product → checkout → invoice → download
-- [ ] E2E: withdrawal request → admin approve → mark paid
-- [ ] Architecture test: no framework imports in `domain/`
+- [x] Unit: every value object added this sprint (`OrderNumber`, `OrderStatus`, `PlatformFee`,
+  `DiscountApplication`, `DownloadAllowance`, `StatusChangeActor`)
+- [x] Unit: `Order` state machine — all 14 legal transitions (19 actor combinations) + all 8
+  explicitly-forbidden ones
+- [x] Unit: `HoldingPeriodCalculator` incl. mixed baskets and the Midtrans floor
+- [x] Unit: `OrderPricingService`, discount clamping
+- [ ] Unit: ledger invariants — Sprint 6
+- [x] Integration: repositories against a real Postgres container (`ordering.int-spec.ts`)
+- [x] Integration: webhook idempotency (duplicate delivery)
+- [ ] Integration: balance concurrency (parallel withdrawals) — Sprint 6/7
+- [x] Integration: outbox durability (`OrderPaid` committed with the state change, claimable by the relay)
+- [x] Integration: cross-tenant isolation for the ordering/delivery endpoints this sprint added — not yet
+  **every** seller endpoint per the doc's full ambition, since no seller order endpoints exist yet
+- [ ] Integration: gross profit never joins `products` — Sprint 13
+- [ ] E2E: signup → store → product → checkout → invoice → download — invoice is Sprint 6; the
+  integration suite covers signup-adjacent → store → product → checkout → webhook → download today
+- [ ] E2E: withdrawal request → admin approve → mark paid — Sprint 7
+- [x] Architecture test: no framework imports in `domain/` — `ordering`/`payments`/`delivery` domain
+  layers pass the existing `architecture.spec.ts` fitness test unmodified
 
 ---
 

@@ -53,6 +53,7 @@ import { SocialLinksController } from './presentation/http/social-links.controll
   ],
   exports: [
     STORE_REPOSITORY,
+    SettlementPolicyResolver,
     StoreService,
     StoreSettingsService,
     SocialLinkService,

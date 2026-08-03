@@ -52,6 +52,7 @@ services:
     env_file:
       - ../.env
     environment:
+      DATABASE_URL: postgresql://nagihin:nagihin@postgres:5432/nagihin
       DIRECT_DATABASE_URL: postgresql://nagihin:nagihin@postgres:5432/nagihin
       REDIS_URL: redis://redis:6379
     depends_on:

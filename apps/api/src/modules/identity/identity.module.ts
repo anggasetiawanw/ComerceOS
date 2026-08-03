@@ -37,5 +37,6 @@ import { UsersController } from './presentation/http/users.controller';
     { provide: EMAIL_SENDER, useClass: ResendEmailSenderService },
     { provide: STORE_LOOKUP, useExisting: StoreLookupService },
   ],
+  exports: [USER_REPOSITORY],
 })
 export class IdentityModule {}

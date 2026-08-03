@@ -68,6 +68,17 @@ export class Money extends ValueObject<MoneyProps> {
     return this.props.amount < other.props.amount;
   }
 
+  multiply(factor: number): Result<Money, MoneyError> {
+    if (!Number.isInteger(factor) || factor < 0) {
+      return Result.err(new MoneyError(`Multiplier must be a non-negative integer, got ${factor}`));
+    }
+    return Money.fromRupiah(this.props.amount * BigInt(factor));
+  }
+
+  min(other: Money): Money {
+    return this.props.amount <= other.props.amount ? this : other;
+  }
+
   percentageBasisPoints(bps: number): Result<Money, MoneyError> {
     if (!Number.isInteger(bps) || bps < 0) {
       return Result.err(new MoneyError(`Basis points must be a non-negative integer, got ${bps}`));

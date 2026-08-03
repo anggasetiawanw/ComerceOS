@@ -61,4 +61,23 @@ describe('Money', () => {
     expect(a.equals(b)).toBe(true);
     expect(a.equals(c)).toBe(false);
   });
+
+  it('multiplies by a non-negative integer quantity', () => {
+    const price = Money.fromRupiah(15000).unwrap();
+    expect(price.multiply(3).unwrap().toString()).toBe('45000');
+    expect(price.multiply(0).unwrap().toString()).toBe('0');
+  });
+
+  it('refuses multiplying by a negative or fractional factor', () => {
+    const price = Money.fromRupiah(15000).unwrap();
+    expect(price.multiply(-1).isErr()).toBe(true);
+    expect(price.multiply(1.5).isErr()).toBe(true);
+  });
+
+  it('min returns the smaller of two amounts', () => {
+    const small = Money.fromRupiah(1000).unwrap();
+    const large = Money.fromRupiah(2000).unwrap();
+    expect(small.min(large).toString()).toBe('1000');
+    expect(large.min(small).toString()).toBe('1000');
+  });
 });
