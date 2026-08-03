@@ -55,6 +55,10 @@ services:
       DATABASE_URL: postgresql://nagihin:nagihin@postgres:5432/nagihin
       DIRECT_DATABASE_URL: postgresql://nagihin:nagihin@postgres:5432/nagihin
       REDIS_URL: redis://redis:6379
+      # env_file above would otherwise override Dockerfile.worker's
+      # PUPPETEER_EXECUTABLE_PATH with .env's blank local-dev value —
+      # Compose environment/env_file always wins over a Dockerfile ENV.
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
     depends_on:
       postgres:
         condition: service_healthy

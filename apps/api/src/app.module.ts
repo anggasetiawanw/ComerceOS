@@ -21,6 +21,10 @@ import { StorefrontModule } from './modules/storefront/storefront.module';
 import { OrderingModule } from './modules/ordering/ordering.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { InvoicingModule } from './modules/invoicing/invoicing.module';
+import { CrmModule } from './modules/crm/crm.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -42,6 +46,10 @@ import { DeliveryModule } from './modules/delivery/delivery.module';
     OrderingModule,
     PaymentsModule,
     DeliveryModule,
+    LedgerModule,
+    InvoicingModule,
+    CrmModule,
+    NotificationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -389,19 +389,217 @@ Decisions and drift from the docs, recorded here rather than silently:
 ### Sprint 6 — Money
 **Goal:** money is tracked correctly and a record exists.
 
-- [ ] Migrations 007–010: ledger, bank accounts, withdrawals, invoices, deliveries, `store_buyers`
-- [ ] `StoreBalance` aggregate with `FOR UPDATE` locking
-- [ ] `balance_transactions` append-only writes with balance snapshots
-- [ ] `credit-holding-balance` and `release-to-available` jobs
-- [ ] `release-holding-balance` scheduler with floor re-check and dispute skip
-- [ ] Invoice number generator (per-store counter), HTML template, PDF worker, storage upload
-- [ ] Email channel + `NotificationChannel` port + `notification_deliveries` groundwork
-- [ ] `store_buyers` upsert on `OrderPaid`, recompute-not-increment
-- [ ] Frontend: `/dashboard/keuangan` (balance + holding countdown), `/dashboard/pembeli`, `/dashboard/invoice`
-- [ ] Tests: ledger invariants, balance concurrency, invoice idempotency, CRM replay safety
+- [x] Migrations 007, 008, 010, and 017 pulled forward: ledger (+ `bank_accounts`/`withdrawals` as
+  schema-only), invoices, `store_buyers`, `notification_deliveries` — 009 already shipped in Sprint 5
+- [x] `StoreBalance` aggregate with `FOR UPDATE` locking
+- [x] `balance_transactions` append-only writes with balance snapshots
+- [x] `credit-holding-balance` and `release-to-available` jobs
+- [x] `release-holding-balance` scheduler with floor re-check and dispute skip
+- [x] Invoice number generator (per-store counter), HTML template, PDF worker, storage upload
+- [x] Email channel + `NotificationChannel` port + `notification_deliveries` groundwork
+- [x] `store_buyers` upsert on `OrderPaid`, recompute-not-increment
+- [x] Frontend: `/dashboard/keuangan` (balance + holding countdown), `/dashboard/pembeli`, `/dashboard/invoice`
+- [x] Tests: ledger invariants, balance concurrency, invoice idempotency, CRM replay safety
 
 **Deliverable:** a paid order credits holding, releases on schedule, generates an emailed invoice, and
 creates a buyer record.
+
+**Status: done.** Verified live 2026-08-03 against real Postgres + Redis (Docker was available this
+sprint, unlike Sprint 5) — 59 API unit suites (894 tests, including the new `StoreBalance` aggregate
+invariants, `BalanceTransactionType` effect table, `InvoiceNumber` format, `Invoice.fromOrder` snapshotting
+incl. immunity to the source object mutating after construction, `outbox-routing.spec.ts`'s fan-out guard,
+and `cursor.spec.ts`) pass, plus all 9 integration suites run for real: `ledger.int-spec.ts` (3/3 — cached
+balance matches `SUM(holding_delta)`/`SUM(available_delta)` and the snapshot chain is gapless; a redelivered
+credit produces exactly one row; 10 orders credited and 5 released concurrently via `Promise.all` on one
+store produce the exact expected final balance and row count — the test the `FOR UPDATE` lock on `stores`
+exists for), `invoicing.int-spec.ts` (2/2 — 3 repeated `generate-invoice` calls for one order yield one
+invoice, one number, `stores.invoice_counter === 1`; numbers are gapless per store and never collide across
+two stores' first invoices), `crm.int-spec.ts` (2/2 — a redelivered `OrderPaid` does not inflate
+`total_orders`/`total_spent`; seller-entered `notes`/`tags` survive a replay; cross-store isolation holds),
+`notifications.int-spec.ts` (3/3 — dispatch writes a `pending` row before anything sends; a successful
+channel marks it `sent`; a failing channel marks it `failed` with `attempts` incremented), and
+`ordering.int-spec.ts`'s new `release-holding-balance` block (2/2 — `releaseBatch` releases a due `holding`
+order, skips a `disputed` one, is idempotent on a second run, and the resulting `OrderReleased` lands
+claimable in the outbox; a direct `execute()` call before the holding floor correctly returns
+`HoldingPeriodNotElapsedError`). Across the full `test:integration` run: 8/9 suites and 59/60 tests pass;
+the one failure (`ordering.int-spec.ts`'s pre-existing "creates a pending_payment order" test) is this
+environment's `.env` carrying real-looking `MIDTRANS_SERVER_KEY`/`MIDTRANS_CLIENT_KEY` values that Midtrans
+rejects with 401, selecting the real `MidtransSnapGateway` over Sprint 5's `StubSnapGateway` — confirmed
+unrelated to any Sprint 6 code by its failure message and by every other test in the same suite (incl. the
+2 new release tests) passing. `catalog.int-spec.ts`, flagged pre-existing 5/14 red in Sprint 5 for a
+missing-Supabase-bucket reason, now passes cleanly in this environment.
+All 4 new migrations (007/008/010/017, applied as `20260803000000`–`20260803000300` since 009 already
+occupies the 006→011 gap from Sprint 5) applied with zero manual intervention against both the dev and
+integration-test Postgres databases. `pnpm run lint`, `pnpm run typecheck`, and `pnpm run build` are clean
+for `apps/api` and `web`; `next build` prerenders all three new routes (`/dashboard/keuangan`,
+`/dashboard/pembeli`, `/dashboard/invoice`) alongside the existing ones.
+
+Three real defects surfaced only by running live against Postgres rather than by typecheck/lint alone —
+recorded because each is the kind of bug a smaller sprint would have shipped: (1) `InvoicingModule` didn't
+import `OutboxModule`, so `InvoiceService` (which injects `OutboxService` to publish `invoice_generated`)
+failed to resolve outside a test double; (2) `NotificationsModule` imported `QueueModule` in the source but
+never added it to the module's own `imports` array, silently relying on `PaymentsModule` loading the
+(global) queue registration first elsewhere in the tree — fixed to import it directly rather than depend on
+sibling-module load order; (3) the three int-spec test fixtures generating fake order numbers as
+`` `ORD-TEST-${id.slice(0,8)}` `` violated `OrderNumber`'s real format (`ORD-{6 digits}-{6 alphanumeric}`)
+and, since a UUIDv7's leading bytes encode a millisecond timestamp, collided under the ledger concurrency
+test's tight-loop order creation — fixed by using `OrderNumber.generate()` in all three files instead of a
+hand-rolled string.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- **`balance_transactions` gained `holding_delta`/`available_delta` columns beyond the documented single
+  signed `amount`.** `.docs/09 §4`'s own worked example writes the `order_released` row as
+  "−95.000 / +95.000" — one row, two movements — which a single signed column cannot express. `amount`
+  stays the unambiguous display magnitude; the two deltas are what make `BalanceReconciler` a plain
+  `SUM(...) GROUP BY store_id` instead of a `CASE` over `type` that would re-encode domain logic in a read
+  query. Direction lives on `BalanceTransactionType` (`holdingDirection`/`availableDirection`), not on a
+  signed `Money` — `Money` cannot be negative by design, which turned out to be an asset:
+  `holding.subtract(amount).isErr()` **is** the insufficient-balance invariant.
+- **Two hand-written partial unique indexes ship in migration 007**, matching Sprint 5's precedent that
+  Prisma cannot express partial predicates: `balance_transactions (order_id, type) WHERE order_id IS NOT
+  NULL AND type IN ('order_paid_holding','order_released')` (the DB half of the credit/release replay
+  guard) and `bank_accounts (store_id) WHERE is_default`. Unlike Sprint 5's partial indexes (access-path
+  sizing only), these two guard an actual double-credit — a deliberate exception, recorded as drift on
+  every future `prisma migrate dev`.
+- **`bank_accounts`/`withdrawals` ship as schema-only this sprint** — both tables exist (migration 007)
+  because `balance_transactions.withdrawal_id` is a `RESTRICT` FK onto `withdrawals`, but no repository,
+  service, or controller exists for either until Sprint 7.
+- **`invoices.invoice_number` is unique per store (`@@unique([storeId, invoiceNumber])`), not globally**,
+  as `.docs/brief/database-schema.md` states — a global unique is unsatisfiable alongside `.docs/04 §7`'s
+  "per-store sequential" (two stores' first invoice would collide). `store_id` was added to the table for
+  this and so `GET /invoices` never joins `orders`. Format is `INV-{5-digit zero-padded counter}`
+  (`INV-00001`, growing past 5 digits naturally) — unspecified in any doc, chosen and recorded here,
+  mirroring Sprint 5's `OrderNumber` drift note. `invoices` also gained `rendered_at` (lets
+  `GET /invoices/:id/pdf` return a precise "sedang dibuat" 422 instead of an ambiguous 404 during the async
+  render window) and `snapshot` (jsonb; freezes `Invoice.fromOrder`'s full view model, defensively
+  `structuredClone`'d on construction, so a later product rename or store profile edit never alters an
+  issued invoice).
+- **Invoice generation is a two-phase design**, exactly as planned: phase A (`InvoiceService.generateForOrder`,
+  transactional) allocates the number under `stores.invoice_counter`'s row lock via `UPDATE ... RETURNING`
+  and inserts the row with `rendered_at = null`; phase B (`renderAndUpload`, deliberately outside any
+  transaction) renders the PDF and uploads it. The split exists because `TransactionManager.runInTransaction`
+  passes no options today (Prisma's 5s default), and holding the `stores` lock across a multi-second
+  Puppeteer render would block the ledger for no reason. `TransactionManager.runInTransaction` gained an
+  optional `{ timeout, maxWait }` passthrough as a result — unused this sprint, an escape hatch for later.
+- **The shared HTML template lives in `packages/contracts`** (`invoice-view-model.ts`, `render-invoice-html.ts`,
+  `format.ts`), which shipped its first real content this sprint. Getting `@nagihin/contracts` a real build
+  (`tsc`, `main`/`types` pointing at `dist/`) rather than importing raw `src/index.ts` was done and verified
+  *first*, before any invoice code — raw-TS importing from a sibling package would have shifted `apps/api`'s
+  computed `rootDir` and silently changed `dist/main.js` to `dist/apps/api/src/main.js`, breaking both
+  Dockerfiles. Confirmed clean both ways (`pnpm --filter @nagihin/api run build` still emits `dist/main.js`).
+- **PDF rendering uses Puppeteer (`puppeteer-core`, not `puppeteer`) behind a `PdfRenderer` port**, with
+  `NullPdfRenderer` selected whenever `PUPPETEER_EXECUTABLE_PATH` is blank — the same "blank config selects
+  the null adapter" pattern as `StorageModule` and the Midtrans stub gateway. This is what keeps local dev
+  and `invoicing.int-spec.ts` free of a Chromium dependency. `docker/Dockerfile.worker` installs
+  `chromium nss freetype harfbuzz ca-certificates ttf-freefont font-noto` and sets
+  `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser`; `docker/Dockerfile.api` gets no Chromium.
+  `docker-compose.yml`'s `worker` service needed an explicit `PUPPETEER_EXECUTABLE_PATH` override, since
+  Compose's `env_file: ../.env` would otherwise clobber the Dockerfile's `ENV` with `.env`'s blank
+  local-dev value — Compose environment/env_file always wins over a Dockerfile default.
+- **`Invoice.pdfUrl` holds a storage path, not a resolvable URL**, despite the name (kept to match the
+  documented `pdf_url` column) — same precedent as `digital_deliveries`: a signed URL is generated fresh
+  per request (`GET /invoices/:id/pdf`, `GET /me/orders/:id/invoice`) rather than persisted, so it can
+  never be served after its 1-hour expiry.
+- **A real BullMQ architectural constraint surfaced while wiring the new queues**: `@nestjs/bullmq`
+  creates one `Worker` per `@Processor`-decorated class, so two processor classes on the same queue name
+  would compete for jobs from Redis *regardless of job name* — a job could silently be pulled by the wrong
+  processor. This would have broken the `ledger` queue (`credit-holding-balance` + `release-to-available`),
+  the `order` queue (`expire-orders` + the new `release-holding-balance`), and the `invoice` queue
+  (`generate-invoice` + `deliver-invoice`) had each job type gotten its own processor class as first drafted.
+  Fixed by consolidating each multi-job-type queue into one processor class that switches on `job.name`:
+  `LedgerQueueProcessor`, the renamed `OrderQueueProcessor` (was `ExpireOrdersProcessor`), and
+  `InvoiceQueueProcessor`. Single-job-type queues (`delivery`, `payment`, `crm`, `notification`, `outbox`)
+  were unaffected and keep one processor class each.
+- **The outbox relay's routing table became one-to-many.** `OUTBOX_ROUTES` now maps an event name to an
+  array of routes with per-route retry policy (`attempts`/`backoff`), and the relay's `queueFor` switched
+  from a hard-coded `switch` to a `ReadonlyMap` built once in the constructor. `ordering.order_paid` now
+  fans out to 4 consumers (delivery, ledger credit, invoice generation, CRM upsert) and
+  `ordering.order_released` to 1 (ledger release). The relay's per-event `try` still wraps the whole
+  fan-out loop, so a partial failure re-queues the *whole* event on retry; the job id became
+  `` `outbox-${event.id}-${route.jobName}` `` (deterministic per route) so BullMQ dedupes the routes that
+  already succeeded. A new `outbox-routing.spec.ts` asserts every route's queue is one the relay actually
+  injects and every `jobName` is a known constant — catching a wiring mistake at test time instead of a
+  production 3am throw.
+- **`ReleaseOrderService` is new** (`modules/ordering/application/services/release-order.service.ts`);
+  `Order.release()` already existed from Sprint 5 with the floor re-check built in and simply had no
+  caller. It serves both `POST /orders/:id/release` (seller actor, ownership-checked via
+  `Order.belongsToStore`, information-hiding a mismatch as `OrderNotFoundError` rather than 403) and the
+  new `release-holding-balance` scheduler (system actor, batched, one transaction per order matching
+  `ExpireOrderService.expireBatch`'s precedent). `OrderRepository.findReleasableIds` joins `stores` on
+  `settlement_mode = 'auto'` — manual-mode orders wait for the seller's own click or Sprint 7's
+  `auto-force-release`. Dispute-skip is structural (`status = 'holding'` excludes `disputed`, and
+  `OrderTransitionPolicy` never allows `system` to transition `disputed → released`), not a query-level
+  special case.
+- **Ledger reads order money by importing `OrderReadService` (an application service), not
+  `ORDER_REPOSITORY`** — `.docs/03 §5` forbids a module importing another module's repository.
+  `OrderReadService` gained a plain `findById(orderId)` pass-through for this; `LedgerService` re-derives
+  `net = order.total - order.fee.amount` at both credit and release time rather than trusting the
+  outbox payload, since `OrderPaid`/`OrderReleased` carry no money amounts. A status guard
+  (`paid|holding|released` for credit, `released` for release) protects against a redelivery racing a
+  future refund.
+- **Cursor pagination is new shared infrastructure** (`shared/kernel/cursor.ts`,
+  `shared/presentation/dto/cursor-{paginated,query}.dto.ts`), mirroring the existing offset `Paginated`
+  precedent exactly so `TransformInterceptor` gained one more `instanceof` branch. The cursor carries a
+  generic `{ k: sortValue, i: id }` pair rather than a hardcoded `(created_at, id)`, since `/buyers` sorts
+  by `total_spent`/`total_orders`/`last_purchase_at`. Used by `/balance/transactions`, `/invoices`, and
+  `/buyers`; `/orders/pending-release` stayed offset-paginated (a store-scoped holding-order queue is
+  smaller even than the buyer order list that set the offset precedent in Sprint 5) — a scope
+  simplification against `.docs/05 §17`'s stated cursor list, recorded here rather than silently.
+- **`StorageUploader` gained `download()`** across the port and all three adapters (Supabase, filesystem,
+  null) — needed so `deliver-invoice` and `SendEmailProcessor` can attach the PDF bytes to the email
+  without persisting them anywhere.
+- **The Resend integration was extracted into `shared/infrastructure/email/resend-mailer.ts`**, a generic
+  `send({ to, subject, html, attachments? })` behind an `EmailModule`. Both identity's `EMAIL_SENDER` port
+  (verification/reset emails, untouched otherwise) and the new `EmailChannel` delegate to it — one Resend
+  client, one dry-run-when-no-API-key path, instead of two.
+- **`SendEmailProcessor` is a one-line BullMQ wrapper around `SendEmailService`**, a plain application
+  service holding the actual send/render/attach/mark-status logic. Splitting it this way was what let
+  `notifications.int-spec.ts` call the logic directly with a real `deliveryId` instead of needing to
+  construct a fake BullMQ `Job` object — a small refactor made specifically for testability.
+- **`NotificationDelivery` is a plain `Entity`, not an aggregate**, mirroring `WebhookEvent`'s "persisted
+  before interpretation" precedent from Sprint 5 exactly: `NotificationDispatcher.dispatch()` writes the
+  row (status `pending` or `skipped`) *before* anything is sent, so a crash between "decided to send" and
+  "actually sent" still leaves a record. An attachment is passed to `dispatch()` as a storage reference
+  (`bucket`/`path`/`filename`), folded into the persisted `payload` JSON as plain keys — never as raw
+  bytes, which don't belong in a jsonb column — and `SendEmailService` downloads the bytes at send time.
+- **Only two notification templates ship this sprint**: `invoice_ready` (the deliverable's emailed
+  invoice, PDF attached) and `order_released` (seller: "dana kamu sudah cair" — the other user-visible
+  money moment this sprint creates). `order_paid_buyer`/`order_paid_seller` from `.docs/10 §3`'s full
+  template table are deferred; the port, dispatcher, table, queue, and channel are the "groundwork" the
+  checklist asked for. Retry job and admin viewer stay Sprint 12 as planned.
+- **`notification_deliveries` (migration 017) was pulled forward from its nominal Sprint 12 slot** — the
+  same move Sprint 5 made pulling `digital_deliveries` (migration 009) forward from Sprint 6. Row-first
+  dispatch needs the table to exist now, not a stub.
+- **The `stores.holding_balance`/`available_balance`/`invoice_counter` fence is an architecture test, not
+  just a convention.** `.docs/03 §3.6` already assigns Ledger responsibility for the two balance columns
+  on a Store-owned row; `StoreMapper.toPersistenceUpdate` already omitted them from Sprint 3. This sprint
+  made it enforced: `architecture.spec.ts` gained a second describe block scanning every
+  `infrastructure/persistence/` file for those three field names in write position and asserting the file
+  is on a 3-file allowlist (`store.mapper.ts`'s zero-init create, `store-balance.prisma.repository.ts`,
+  `invoice-number.prisma.allocator.ts`), plus a third block asserting `BalanceTransaction.record(` — the
+  factory "private to `StoreBalance`" per `.docs/04 §6`, which TypeScript itself cannot express — appears
+  only in the aggregate and its mapper.
+- **`HoldingCountdown`'s per-order release reason is a static explanation, not a derived discriminated
+  union.** `.docs/11-frontend.md`'s component spec wants "T+3 setelah settlement Midtrans" computed per
+  order from its item risk tiers and the store's settlement mode; this sprint ships the release date plus
+  a general always-shown explanation instead. A cut, recorded rather than silently shipped.
+- **`InvoicePreview` opens a freshly-signed PDF URL in a new tab rather than rendering the shared HTML
+  template in an iframe.** The invoice snapshot (the full `InvoiceViewModel` needed to render client-side)
+  is not exposed over the seller-facing API this sprint — `InvoiceResponseDto` carries only
+  id/orderId/invoiceNumber/status fields. A scope simplification against `.docs/11`'s `InvoicePreview`
+  spec; the PDF itself (byte-identical to what the template produces) is one click away either way.
+- **`DataTable` ships without server-side column sorting.** `@tanstack/react-table` + the `table` primitive
+  landed as planned (cursor pagination, required loading/empty/error props, CSS-only responsive card
+  fallback below `md`), but clickable sortable column headers were cut; `/dashboard/pembeli`'s sort is a
+  `<Select>` dropdown (recent / total spent / total orders) instead. Pagination state is an in-memory
+  cursor stack (`useCursorPagination`), not URL-synced as `.docs/11` specifies — both cuts, recorded rather
+  than silently shipped; Sprint 7's admin lists are the first thing that will need row selection, at which
+  point the sortable-header and URL-sync gaps are worth closing together.
+- **`GET /invoices/:id/pdf` and the seller `GET /invoices/:id` both check `invoice.storeId === storeId`
+  in the application service** (`InvoiceReadService.getForStore`/`getSignedPdfUrlForStore`), not just via
+  `StoreOwnerGuard` — the guard only resolves the caller's own store, not whether a specific invoice id
+  belongs to it. Same information-hiding precedent as `ReleaseOrderService`: a mismatch is `InvoiceNotFoundError`
+  (404), not a 403 that would confirm the id exists.
 
 ---
 
@@ -561,22 +759,29 @@ balances.
 - [ ] Reconciliation service (three-way match) — Sprint 12
 
 **Ledger**
-- [ ] `StoreBalance` aggregate with row locking
-- [ ] Ledger service; private balance mutation
-- [ ] Withdrawal service with pending-reservation logic
-- [ ] Bank account service
-- [ ] `BalanceReconciler`
-- [ ] Platform revenue + seller liability calculators
+- [x] `StoreBalance` aggregate with row locking (`StoreBalancePrismaRepository.findForUpdate`,
+  `SELECT ... FOR UPDATE` on `stores`)
+- [x] Ledger service; private balance mutation (`LedgerService.creditHoldingForOrder`/
+  `releaseToAvailableForOrder` — the only application service that may call
+  `StoreBalanceRepository.save`, enforced by `architecture.spec.ts`)
+- [ ] Withdrawal service with pending-reservation logic — Sprint 7
+- [ ] Bank account service — Sprint 7 (table is schema-only this sprint)
+- [x] `BalanceReconciler` (recompute from ledger sums, report drift — no caller yet; Sprint 12's
+  `verify-store-balances` job is its first consumer)
+- [ ] Platform revenue + seller liability calculators — stubbed, no caller until Sprint 7's admin
+  finance screen
 
 **Supporting**
-- [ ] Invoice number generator, renderer, delivery service — Sprint 6
+- [x] Invoice number generator, renderer, delivery service (`InvoiceService`, `InvoiceDeliveryService`,
+  Puppeteer/`NullPdfRenderer` behind a `PdfRenderer` port)
 - [x] Digital delivery service, signed URL issuer, download policy
-- [ ] `StoreBuyer` service with recompute-on-event
-- [ ] `Promotion` aggregate, validator, calculator
-- [ ] `NotificationChannel` port, email adapter, WhatsApp adapter, dispatcher
-- [ ] `AuditLogPort` + service
-- [ ] Reporting read repositories
-- [ ] Admin services
+- [x] `StoreBuyer` service with recompute-on-event (`StoreBuyerService.upsertFromPaidOrder`)
+- [ ] `Promotion` aggregate, validator, calculator — Sprint 10
+- [x] `NotificationChannel` port, email adapter, dispatcher — WhatsApp adapter is Sprint 9; the port
+  and dispatch loop already support a second channel
+- [ ] `AuditLogPort` + service — Sprint 7
+- [ ] Reporting read repositories — Sprint 12/13
+- [ ] Admin services — Sprint 7
 
 ### Frontend
 
@@ -588,29 +793,36 @@ balances.
 - [x] Auth store (Zustand, memory only), middleware guard
 - [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard and storefront shells
   done; marketing, admin, buyer still placeholders
-- [ ] `DataTable` with responsive card fallback — still deferred: no seller order list shipped this
-  sprint either (`/dashboard/pesanan` is Sprint 6+), so there is still nothing that needs cursor
-  pagination + row selection; the buyer-facing order/delivery lists use the same card layout
+- [x] `DataTable` with responsive card fallback — `@tanstack/react-table` + the `table` primitive,
+  cursor pagination, required loading/empty/error props, CSS-only card fallback below `md`. Server-side
+  column sorting was cut (buyers' sort is a `<Select>` dropdown instead); no row selection yet — Sprint
+  7's admin queue is the first thing that needs it
 - [x] `EmptyState` / `ErrorState` / skeleton set
 - [x] `MoneyDisplay`, `MoneyInput` (bigint-safe)
-- [x] `OrderStatusBadge` — `Timeline`, `HoldingCountdown`, `BalanceCard` wait for Sprint 6 seller pages
+- [x] `OrderStatusBadge`, `HoldingCountdown`, `BalanceCard` — `HoldingCountdown`'s per-order release
+  reason is a static explanation, not derived per order (see this sprint's drift notes); `Timeline`
+  still waits for a seller order-detail page
 - [x] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` genericized
   in Sprint 4 (was hardcoded to `Store`); `FileUploader` done; `PhoneInput` lands with Sprint 9
 - [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — Beli now creates a real order and
   redirects to checkout; Tanya stays inert until Sprint 9 as documented
 - [x] Checkout + Snap integration + status polling
-- [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko` and `pengaturan`
-  done, the rest land sprint-by-sprint (no seller order pages this sprint — see drift notes)
+- [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko`, `pengaturan`,
+  `keuangan`, `pembeli`, `invoice` done; seller order pages and admin still land sprint-by-sprint
 - [x] Buyer `/akun` pages — order history, order detail, downloads; profile settings still a placeholder
-- [ ] Admin pages
-- [ ] `InvoicePreview` shared with the PDF renderer
-- [ ] Charts (dynamically imported)
-- [ ] Mobile pass on every screen
+- [ ] Admin pages — Sprint 7
+- [x] `InvoicePreview` — opens a freshly-signed PDF URL rather than rendering the shared HTML template
+  in an iframe, since the full view model isn't exposed over the seller API this sprint (see drift notes)
+- [ ] Charts (dynamically imported) — Sprint 13
+- [ ] Mobile pass on every screen — ongoing; this sprint's 3 new pages follow the existing responsive
+  patterns but a dedicated pass across the whole app is still Sprint 8
 
 ### DevOps
 
 - [x] `Dockerfile.api`, `Dockerfile.worker` (multi-stage, non-root, Node 22) — both build `@nagihin/api`
-  since Sprint 5's worker merge; `Dockerfile.worker` runs `dist/worker.main.js`
+  since Sprint 5's worker merge; `Dockerfile.worker` runs `dist/worker.main.js`. `Dockerfile.worker` also
+  builds `@nagihin/contracts` first, copies its `dist/` into the runtime stage (the invoice HTML template
+  lives there), and installs Chromium for the Puppeteer PDF renderer — `Dockerfile.api` gets neither
 - [x] `docker-compose.yml` for local development
 - [x] `.env.example` with every Sprint 1 variable documented (remaining variables land with the modules that need them)
 - [x] GitHub Actions: lint, typecheck, unit, build. Integration job deferred — Sprint 2 (first Postgres-backed module)
@@ -625,11 +837,12 @@ balances.
 
 ### Database
 
-- [ ] Migrations 001–019 in order (001–004, 005, 006, 009, 011 done — 009 pulled forward from Sprint 6;
-  007/008/010 (ledger, invoicing, `store_buyers`) still land in Sprint 6, 012+ later)
+- [ ] Migrations 001–019 in order (001–011 done across Sprints 1–5, 007/008/010/017 done this sprint —
+  017 pulled forward from Sprint 12, same move Sprint 5 made with 009; 012+ later)
 - [x] Check constraints from [06 §4](./06-database-roadmap.md#4-constraints) for the tables this sprint
-  added (orders, order_items, digital_deliveries) — partial-index predicates are plain non-partial
-  `@@index` entries, see this sprint's drift notes
+  added (`balance_transactions`, `withdrawals`, `store_buyers`, plus `stores`' non-negative balance
+  check) — partial-index predicates are plain non-partial `@@index` entries except two hand-written
+  ones that guard a money double-credit, see this sprint's drift notes
 - [x] Indexes from [06 §3](./06-database-roadmap.md#3-indexes) for the tables this sprint added, same
   partial-index caveat
 - [x] `seed/base.ts` (idempotent, production-safe) — no-op stub until Sprint 3 needs reserved usernames
@@ -644,19 +857,33 @@ balances.
   explicitly-forbidden ones
 - [x] Unit: `HoldingPeriodCalculator` incl. mixed baskets and the Midtrans floor
 - [x] Unit: `OrderPricingService`, discount clamping
-- [ ] Unit: ledger invariants — Sprint 6
-- [x] Integration: repositories against a real Postgres container (`ordering.int-spec.ts`)
+- [x] Unit: ledger invariants (`StoreBalance` aggregate — credit/release arithmetic, no-partial-mutation
+  on error, one entry per mutation; `BalanceTransactionType`'s full effect table)
+- [x] Unit: `InvoiceNumber` format/round-trip, `Invoice.fromOrder` snapshotting (incl. immunity to the
+  source object mutating after construction)
+- [x] Integration: repositories against a real Postgres container (`ordering.int-spec.ts`,
+  `ledger.int-spec.ts`, `invoicing.int-spec.ts`, `crm.int-spec.ts`, `notifications.int-spec.ts`)
 - [x] Integration: webhook idempotency (duplicate delivery)
-- [ ] Integration: balance concurrency (parallel withdrawals) — Sprint 6/7
+- [x] Integration: balance concurrency — parallel credits and releases on one store via `Promise.all`,
+  proving the `FOR UPDATE` lock on `stores` (withdrawal concurrency specifically is Sprint 7, once
+  withdrawals have application code)
 - [x] Integration: outbox durability (`OrderPaid` committed with the state change, claimable by the relay)
-- [x] Integration: cross-tenant isolation for the ordering/delivery endpoints this sprint added — not yet
-  **every** seller endpoint per the doc's full ambition, since no seller order endpoints exist yet
+- [x] Integration: invoice idempotency (repeated `generate-invoice` never burns a second number; numbers
+  gapless per store and non-colliding across stores)
+- [x] Integration: CRM replay safety (a redelivered `OrderPaid` doesn't inflate totals; `notes`/`tags`
+  survive a replay) and cross-store isolation
+- [x] Integration: cross-tenant isolation for the ordering/delivery endpoints this sprint added, plus
+  invoice ownership checks (`InvoiceReadService.getForStore`) — not yet **every** seller endpoint per the
+  doc's full ambition
 - [ ] Integration: gross profit never joins `products` — Sprint 13
-- [ ] E2E: signup → store → product → checkout → invoice → download — invoice is Sprint 6; the
-  integration suite covers signup-adjacent → store → product → checkout → webhook → download today
+- [ ] E2E: signup → store → product → checkout → invoice → download — the integration suite covers this
+  path service-by-service (checkout → webhook → ledger credit → invoice generation → download) but not
+  as one Playwright E2E test yet
 - [ ] E2E: withdrawal request → admin approve → mark paid — Sprint 7
-- [x] Architecture test: no framework imports in `domain/` — `ordering`/`payments`/`delivery` domain
-  layers pass the existing `architecture.spec.ts` fitness test unmodified
+- [x] Architecture test: no framework imports in `domain/` — `ledger`/`invoicing`/`crm`/`notifications`
+  domain layers pass the existing `architecture.spec.ts` fitness test unmodified, which also gained two
+  new blocks this sprint: the `stores.holding_balance`/`available_balance`/`invoice_counter` write
+  fence, and the `BalanceTransaction.record()`-is-private-to-`StoreBalance` fence
 
 ---
 

@@ -65,6 +65,10 @@ describe('Storefront (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.notificationDelivery.deleteMany();
+    await prisma.balanceTransaction.deleteMany();
+    await prisma.invoice.deleteMany();
+    await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();
     await prisma.outboxEvent.deleteMany();
     await prisma.idempotencyKey.deleteMany();

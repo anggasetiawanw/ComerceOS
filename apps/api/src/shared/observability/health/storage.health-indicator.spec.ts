@@ -25,6 +25,10 @@ class FakeStorageUploader implements StorageUploader {
   createSignedUrl(): Promise<string> {
     throw new Error('not used in this test');
   }
+
+  download(): Promise<Buffer> {
+    throw new Error('not used in this test');
+  }
 }
 
 describe('StorageHealthIndicator', () => {

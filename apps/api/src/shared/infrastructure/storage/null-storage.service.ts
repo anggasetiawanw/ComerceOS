@@ -32,4 +32,8 @@ export class NullStorageUploader implements StorageUploader {
   }): Promise<string> {
     throw new StorageNotConfiguredError();
   }
+
+  async download(_params: { bucket: StorageBucket; path: string }): Promise<Buffer> {
+    throw new StorageNotConfiguredError();
+  }
 }

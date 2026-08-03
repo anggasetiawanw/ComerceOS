@@ -29,7 +29,9 @@ import { DeliveryService } from '../delivery/application/services/delivery.servi
 import { OrderingModule } from './ordering.module';
 import { CheckoutService } from './application/services/checkout.service';
 import { ExpireOrderService } from './application/services/expire-order.service';
+import { ReleaseOrderService } from './application/services/release-order.service';
 import { ORDER_REPOSITORY, OrderRepository } from './domain/repositories/order.repository';
+import { StatusChangeActor } from './domain/value-objects/status-change-actor.vo';
 
 const fakeStorageUploader: StorageUploader = {
   isConfigured: () => true,
@@ -37,6 +39,7 @@ const fakeStorageUploader: StorageUploader = {
   upload: async ({ path }) => ({ path, url: `https://fake.local/${path}` }),
   remove: async () => undefined,
   createSignedUrl: async ({ path }) => `https://fake.local/signed/${path}`,
+  download: async () => Buffer.from('fake'),
 };
 
 const createUser = async (prisma: PrismaService, email: string, role: 'seller' | 'buyer') =>
@@ -60,6 +63,7 @@ describe('Ordering (integration)', () => {
   let digitalFileService: DigitalFileService;
   let checkoutService: CheckoutService;
   let expireOrderService: ExpireOrderService;
+  let releaseOrderService: ReleaseOrderService;
   let webhookIngestion: WebhookIngestionService;
   let webhookProcessing: WebhookProcessingService;
   let deliveryService: DeliveryService;
@@ -101,6 +105,7 @@ describe('Ordering (integration)', () => {
     digitalFileService = moduleRef.get(DigitalFileService);
     checkoutService = moduleRef.get(CheckoutService);
     expireOrderService = moduleRef.get(ExpireOrderService);
+    releaseOrderService = moduleRef.get(ReleaseOrderService);
     webhookIngestion = moduleRef.get(WebhookIngestionService);
     webhookProcessing = moduleRef.get(WebhookProcessingService);
     deliveryService = moduleRef.get(DeliveryService);
@@ -110,6 +115,10 @@ describe('Ordering (integration)', () => {
   });
 
   beforeEach(async () => {
+    await prisma.notificationDelivery.deleteMany();
+    await prisma.balanceTransaction.deleteMany();
+    await prisma.invoice.deleteMany();
+    await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();
     await prisma.outboxEvent.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -345,6 +354,92 @@ describe('Ordering (integration)', () => {
       const loaded = await orders.findById(order.id);
       expect(loaded?.belongsToBuyer(buyerA.id)).toBe(true);
       expect(loaded?.belongsToBuyer(buyerB.id)).toBe(false);
+    });
+  });
+
+  describe('release-holding-balance (Sprint 6)', () => {
+    it('releases a due holding order and skips a disputed one', async () => {
+      const { product } = await setUpDigitalProduct({
+        sellerEmail: 'seller5@example.com',
+        username: 'tokoorder5',
+        price: '30000',
+      });
+      const buyer = await createUser(prisma, 'buyer5@example.com', 'buyer');
+
+      // Order A: paid, then forced past its holding floor — releasable.
+      const checkoutA = await checkoutService.create(buyer.id, {
+        items: [{ productId: product.id, qty: 1 }],
+        buyerName: 'Test Buyer',
+        buyerEmail: 'buyer5@example.com',
+        buyerPhone: null,
+      });
+      const orderA = checkoutA.unwrap().order;
+      const payloadA = buildSettledWebhookPayload(orderA.orderNumber.value, orderA.total.toString());
+      const ingestA = await webhookIngestion.ingest(payloadA);
+      await webhookProcessing.process(ingestA.unwrap().webhookEventId);
+      await prisma.order.update({ where: { id: orderA.id }, data: { holdingUntil: new Date(Date.now() - 1000) } });
+
+      // Order B: paid then manually forced into 'disputed' — must never be released.
+      const checkoutB = await checkoutService.create(buyer.id, {
+        items: [{ productId: product.id, qty: 1 }],
+        buyerName: 'Test Buyer',
+        buyerEmail: 'buyer5@example.com',
+        buyerPhone: null,
+      });
+      const orderB = checkoutB.unwrap().order;
+      const payloadB = buildSettledWebhookPayload(orderB.orderNumber.value, orderB.total.toString());
+      const ingestB = await webhookIngestion.ingest(payloadB);
+      await webhookProcessing.process(ingestB.unwrap().webhookEventId);
+      await prisma.order.update({
+        where: { id: orderB.id },
+        data: { status: 'disputed', holdingUntil: new Date(Date.now() - 1000) },
+      });
+
+      const result = await releaseOrderService.releaseBatch(500);
+      expect(result.released).toBe(1);
+
+      const releasedA = await orders.findById(orderA.id);
+      expect(releasedA?.status.value).toBe('released');
+      const untouchedB = await orders.findById(orderB.id);
+      expect(untouchedB?.status.value).toBe('disputed');
+
+      // OrderReleased landed in and is claimable from the outbox.
+      const claimed = await outboxRepository.claimPending(50);
+      const releasedEvent = claimed.find(
+        (event) => event.eventType === 'ordering.order_released' && event.aggregateId === orderA.id,
+      );
+      expect(releasedEvent).toBeDefined();
+
+      // Idempotent: a second run finds nothing left to release.
+      const secondRun = await releaseOrderService.releaseBatch(500);
+      expect(secondRun.released).toBe(0);
+    });
+
+    it('a manual release is rejected before the holding floor via the direct execute() path', async () => {
+      const { product } = await setUpDigitalProduct({
+        sellerEmail: 'seller6@example.com',
+        username: 'tokoorder6',
+        price: '40000',
+      });
+      const buyer = await createUser(prisma, 'buyer6@example.com', 'buyer');
+
+      const checkoutResult = await checkoutService.create(buyer.id, {
+        items: [{ productId: product.id, qty: 1 }],
+        buyerName: 'Test Buyer',
+        buyerEmail: 'buyer6@example.com',
+        buyerPhone: null,
+      });
+      const order = checkoutResult.unwrap().order;
+      const payload = buildSettledWebhookPayload(order.orderNumber.value, order.total.toString());
+      const ingestResult = await webhookIngestion.ingest(payload);
+      await webhookProcessing.process(ingestResult.unwrap().webhookEventId);
+      // holding_until stays in the future — not yet releasable.
+
+      const result = await releaseOrderService.execute(order.id, StatusChangeActor.system());
+      expect(result.isErr()).toBe(true);
+
+      const untouched = await orders.findById(order.id);
+      expect(untouched?.status.value).toBe('holding');
     });
   });
 });

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { EmailModule } from '../../shared/infrastructure/email/email.module';
 import { StoreModule } from '../store/store.module';
 import { StoreLookupService } from '../store/application/services/store-lookup.service';
 import { AuthService } from './application/services/auth.service';
@@ -22,7 +23,7 @@ import { AuthController } from './presentation/http/auth.controller';
 import { UsersController } from './presentation/http/users.controller';
 
 @Module({
-  imports: [StoreModule],
+  imports: [StoreModule, EmailModule],
   controllers: [AuthController, UsersController],
   providers: [
     AuthService,

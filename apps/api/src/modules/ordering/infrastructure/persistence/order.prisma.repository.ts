@@ -53,6 +53,17 @@ export class OrderPrismaRepository implements OrderRepository {
     return rows.map((row) => row.id);
   }
 
+  async findReleasableIds(now: Date, limit: number): Promise<string[]> {
+    const rows = await this.transactionManager.client.$queryRaw<{ id: string }[]>`
+      SELECT o.id FROM orders o
+      JOIN stores s ON s.id = o.store_id
+      WHERE o.status = 'holding' AND o.holding_until <= ${now} AND s.settlement_mode = 'auto'
+      ORDER BY o.holding_until ASC, o.id ASC
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => row.id);
+  }
+
   async save(order: Order): Promise<void> {
     await this.transactionManager.client.order.upsert({
       where: { id: order.id },

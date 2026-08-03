@@ -80,6 +80,38 @@ enum OutboxStatus {
   failed
 }
 
+enum BalanceTransactionType {
+  order_paid_holding
+  order_released
+  withdrawal_paid
+  refund_debit
+  promo_adjustment
+}
+
+enum WithdrawalStatus {
+  requested
+  paid
+  rejected
+}
+
+enum InvoiceSentVia {
+  wa
+  email
+  both
+}
+
+enum NotificationChannelType {
+  email
+  whatsapp
+}
+
+enum NotificationDeliveryStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
 // Identity — Sprint 2. IDs are UUIDv7 generated in application code
 // (shared/kernel/uuid.ts), never a database default.
 model User {
@@ -99,6 +131,7 @@ model User {
   store              Store?
   orders             Order[]
   orderStatusChanges OrderStatusHistory[]
+  storeBuyerRecords  StoreBuyer[]
 
   @@map("users")
 }
@@ -139,8 +172,11 @@ model VerificationToken {
 
 // Store — Sprint 3. IDs are UUIDv7 generated in application code
 // (shared/kernel/uuid.ts), never a database default. holding_balance and
-// available_balance are ledger-owned caches (AD-06); only Sprint 6's ledger
-// ever writes them — see StoreMapper.toPersistenceUpdate.
+// available_balance are ledger-owned caches (AD-06): the only file that may
+// write them is modules/ledger/infrastructure/persistence/store-balance.prisma.repository.ts
+// (plus StoreMapper.toPersistenceCreate, which zero-initialises at store
+// creation) — see Sprint 6's architecture.spec.ts fence. invoice_counter is
+// likewise owned by modules/invoicing/infrastructure/persistence/invoice-number.prisma.allocator.ts.
 model Store {
   id               String         @id
   ownerId          String         @unique @map("owner_id")
@@ -158,10 +194,15 @@ model Store {
   invoiceCounter   Int            @default(0) @map("invoice_counter")
   createdAt        DateTime       @default(now()) @map("created_at")
 
-  owner       User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  socialLinks SocialLink[]
-  products    Product[]
-  orders      Order[]
+  owner               User                 @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  socialLinks         SocialLink[]
+  products            Product[]
+  orders              Order[]
+  balanceTransactions BalanceTransaction[]
+  bankAccounts        BankAccount[]
+  withdrawals         Withdrawal[]
+  invoices            Invoice[]
+  storeBuyers         StoreBuyer[]
 
   @@map("stores")
 }
@@ -258,16 +299,19 @@ model Order {
   releasedAt            DateTime?   @map("released_at")
   createdAt             DateTime    @default(now()) @map("created_at")
 
-  store         Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  buyer         User                 @relation(fields: [buyerId], references: [id], onDelete: Restrict)
-  items         OrderItem[]
-  statusHistory OrderStatusHistory[]
-  webhookEvents WebhookEvent[]
+  store               Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  buyer               User                 @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  items               OrderItem[]
+  statusHistory       OrderStatusHistory[]
+  webhookEvents       WebhookEvent[]
+  balanceTransactions BalanceTransaction[]
+  invoice             Invoice?
 
   @@index([storeId, createdAt])
   @@index([storeId, status, createdAt])
   @@index([buyerId, createdAt])
   @@index([midtransTransactionId])
+  @@index([status, holdingUntil])
   @@map("orders")
 }
 
@@ -401,4 +445,160 @@ model IdempotencyKey {
 
   @@unique([key, userId])
   @@map("idempotency_keys")
+}
+
+// Ledger — Sprint 6 (migration 007). Append-only: no application code ever
+// updates or deletes a row here (.docs/09-payments-ledger.md §4). Every row
+// carries the resulting store balances (holding_balance_after /
+// available_balance_after) so any single row is independently verifiable.
+// holding_delta / available_delta are a documented deviation from
+// .docs/brief/database-schema.md's single signed "amount" column — the
+// order_released movement affects both holding and available in one entry,
+// which one signed column cannot express (see .docs/09 §4's worked example:
+// "-95.000 / +95.000"). "amount" stays the unambiguous display magnitude.
+// FKs onto orders/stores/withdrawals are RESTRICT — the ledger is immutable
+// and nothing may delete out from under it.
+model BalanceTransaction {
+  id                    String                 @id
+  storeId               String                 @map("store_id")
+  orderId               String?                @map("order_id")
+  withdrawalId          String?                @map("withdrawal_id")
+  type                  BalanceTransactionType
+  amount                BigInt
+  holdingDelta          BigInt                 @default(0) @map("holding_delta")
+  availableDelta        BigInt                 @default(0) @map("available_delta")
+  holdingBalanceAfter   BigInt                 @map("holding_balance_after")
+  availableBalanceAfter BigInt                 @map("available_balance_after")
+  note                  String?
+  createdAt             DateTime               @default(now()) @map("created_at")
+
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  order      Order?      @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  withdrawal Withdrawal? @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+
+  @@index([storeId, createdAt])
+  @@index([orderId])
+  @@map("balance_transactions")
+}
+
+// bank_accounts — Sprint 6 schema, Sprint 7 application code (no repository,
+// service, or controller exists yet). Amendment 2.4 (.docs/06 §2.4): the
+// schema snapshots bank details onto withdrawals but needs somewhere to
+// store them so a seller isn't re-typing an account number on every
+// request — the one operation where a typo sends money to a stranger.
+model BankAccount {
+  id                String    @id
+  storeId           String    @map("store_id")
+  bankCode          String    @map("bank_code")
+  bankName          String    @map("bank_name")
+  accountNumber     String    @map("account_number")
+  accountHolderName String    @map("account_holder_name")
+  isDefault         Boolean   @default(false) @map("is_default")
+  verifiedAt        DateTime? @map("verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  store       Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  withdrawals Withdrawal[]
+
+  @@map("bank_accounts")
+}
+
+// withdrawals — Sprint 6 schema, Sprint 7 application code. bank_account_snapshot
+// freezes the destination at request time so a later account edit never
+// alters a past withdrawal's record.
+model Withdrawal {
+  id                  String           @id
+  storeId             String           @map("store_id")
+  bankAccountId       String?          @map("bank_account_id")
+  amount              BigInt
+  status              WithdrawalStatus @default(requested)
+  bankAccountSnapshot Json             @map("bank_account_snapshot")
+  requestedAt         DateTime         @default(now()) @map("requested_at")
+  paidAt              DateTime?        @map("paid_at")
+  adminNote           String?          @map("admin_note")
+
+  store               Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  bankAccount         BankAccount?         @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  balanceTransactions BalanceTransaction[]
+
+  @@index([status, requestedAt])
+  @@map("withdrawals")
+}
+
+// invoices — Sprint 6 (migration 008). invoice_number is unique per store,
+// not globally (a deviation from .docs/brief/database-schema.md's global
+// unique, which is unsatisfiable alongside .docs/04 §7's "per-store
+// sequential" — two stores would collide on their first invoice). store_id
+// and rendered_at/snapshot are additions beyond the documented 7 columns:
+// store_id avoids joining orders on every list page; rendered_at lets
+// GET /invoices/:id/pdf return a precise "not ready yet" instead of an
+// ambiguous 404 during the async PDF render window; snapshot freezes the
+// full view model so a later product/store edit never alters an issued
+// invoice (Invoice.fromOrder in the domain layer).
+model Invoice {
+  id            String          @id
+  orderId       String          @unique @map("order_id")
+  storeId       String          @map("store_id")
+  invoiceNumber String          @map("invoice_number")
+  pdfUrl        String?         @map("pdf_url")
+  renderedAt    DateTime?       @map("rendered_at")
+  sentVia       InvoiceSentVia? @map("sent_via")
+  sentAt        DateTime?       @map("sent_at")
+  snapshot      Json
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, invoiceNumber])
+  @@index([storeId, createdAt])
+  @@map("invoices")
+}
+
+// store_buyers — Sprint 6 (migration 010). The buyer database — CRM's owned
+// table. Recomputed, never incremented, on every OrderPaid replay (see
+// modules/crm's upsertOnPurchase SQL) so a redelivered webhook cannot
+// inflate a buyer's lifetime spend. tags/notes are seller-entered and are
+// never touched by the recompute. buyer_id -> users is RESTRICT: the CRM
+// record must survive as long as the user exists.
+model StoreBuyer {
+  id              String   @id
+  storeId         String   @map("store_id")
+  buyerId         String   @map("buyer_id")
+  firstPurchaseAt DateTime @map("first_purchase_at")
+  lastPurchaseAt  DateTime @map("last_purchase_at")
+  totalOrders     Int      @default(0) @map("total_orders")
+  totalSpent      BigInt   @default(0) @map("total_spent")
+  tags            String[] @default([])
+  notes           String?
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  buyer User  @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, buyerId])
+  @@index([storeId, lastPurchaseAt])
+  @@index([storeId, totalSpent])
+  @@map("store_buyers")
+}
+
+// notification_deliveries — migration 017, pulled forward from Sprint 12
+// (same move Sprint 5 made pulling migration 009 forward), because Sprint 6
+// ships the NotificationChannel port + email adapter and every dispatch is
+// row-first: nothing is sent without a persisted delivery record. The retry
+// job and admin viewer stay Sprint 12 — this table is what they'll read.
+model NotificationDelivery {
+  id           String                     @id
+  channel      NotificationChannelType
+  provider     String
+  recipient    String
+  template     String
+  payload      Json
+  status       NotificationDeliveryStatus @default(pending)
+  attempts     Int                        @default(0)
+  errorMessage String?                    @map("error_message")
+  sentAt       DateTime?                  @map("sent_at")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+
+  @@index([status, createdAt])
+  @@map("notification_deliveries")
 }

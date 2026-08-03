@@ -19,15 +19,26 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 COPY . .
 RUN pnpm exec prisma generate
+RUN pnpm --filter @nagihin/contracts run build
 RUN pnpm --filter @nagihin/api run build
 
+# The invoice PDF renderer (modules/invoicing/infrastructure/pdf) needs a
+# real Chromium binary — puppeteer-core ships no browser of its own, which
+# is what keeps `pnpm install` free of a ~300MB download on every dev
+# machine and in CI. font-noto is not optional: without it, Indonesian
+# invoice text (and any non-ASCII buyer/store name) renders as tofu boxes.
 FROM base AS runtime
 ENV NODE_ENV=production
+RUN apk add --no-cache chromium nss freetype harfbuzz ca-certificates ttf-freefont font-noto
+ENV PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 RUN addgroup -S nagihin && adduser -S nagihin -G nagihin
 
 COPY --from=build /repo/node_modules ./node_modules
 COPY --from=build /repo/package.json ./package.json
 COPY --from=build /repo/prisma ./prisma
+COPY --from=build /repo/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /repo/packages/contracts/package.json ./packages/contracts/package.json
 COPY --from=build /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /repo/apps/api/package.json ./apps/api/package.json
 COPY --from=build /repo/apps/api/dist ./apps/api/dist

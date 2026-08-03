@@ -11,8 +11,14 @@ export class TransactionManager {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async runInTransaction<T>(work: () => Promise<T>): Promise<T> {
-    return this.prisma.$transaction((tx) => this.storage.run(tx, work));
+  // options is an escape hatch for callers holding a row lock across
+  // something slower than Prisma's 5s default (e.g. the ledger under a
+  // burst on one store) — most callers never need it.
+  async runInTransaction<T>(
+    work: () => Promise<T>,
+    options?: { timeout?: number; maxWait?: number },
+  ): Promise<T> {
+    return this.prisma.$transaction((tx) => this.storage.run(tx, work), options);
   }
 
   get client(): TransactionClient | PrismaService {

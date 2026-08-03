@@ -13,9 +13,11 @@ import { CheckoutService } from './application/services/checkout.service';
 import { MarkOrderPaidService } from './application/services/mark-order-paid.service';
 import { CancelOrderService } from './application/services/cancel-order.service';
 import { ExpireOrderService } from './application/services/expire-order.service';
+import { ReleaseOrderService } from './application/services/release-order.service';
 import { OrderReadService } from './application/services/order-read.service';
 import { CheckoutController } from './presentation/http/checkout.controller';
 import { BuyerOrdersController } from './presentation/http/buyer-orders.controller';
+import { StoreOrdersController } from './presentation/http/store-orders.controller';
 
 @Module({
   imports: [
@@ -26,7 +28,7 @@ import { BuyerOrdersController } from './presentation/http/buyer-orders.controll
     OutboxModule,
     forwardRef(() => PaymentsModule),
   ],
-  controllers: [CheckoutController, BuyerOrdersController],
+  controllers: [CheckoutController, BuyerOrdersController, StoreOrdersController],
   providers: [
     { provide: ORDER_REPOSITORY, useClass: OrderPrismaRepository },
     { provide: ORDER_READ_REPOSITORY, useClass: OrderReadPrismaRepository },
@@ -34,8 +36,16 @@ import { BuyerOrdersController } from './presentation/http/buyer-orders.controll
     MarkOrderPaidService,
     CancelOrderService,
     ExpireOrderService,
+    ReleaseOrderService,
     OrderReadService,
   ],
-  exports: [ORDER_REPOSITORY, MarkOrderPaidService, CancelOrderService, ExpireOrderService, OrderReadService],
+  exports: [
+    ORDER_REPOSITORY,
+    MarkOrderPaidService,
+    CancelOrderService,
+    ExpireOrderService,
+    ReleaseOrderService,
+    OrderReadService,
+  ],
 })
 export class OrderingModule {}

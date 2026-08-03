@@ -6,6 +6,7 @@ import {
   BuyerOrderListResult,
   ORDER_READ_REPOSITORY,
   OrderReadRepository,
+  PendingReleaseListItem,
 } from '../../domain/repositories/order-read.repository';
 import { OrderNotFoundError } from '../../domain/errors/ordering.errors';
 
@@ -30,5 +31,21 @@ export class OrderReadService {
     const order = await this.orders.findByOrderNumber(orderNumber);
     if (!order || !order.belongsToBuyer(buyerId)) return Result.err(new OrderNotFoundError());
     return Result.ok(order);
+  }
+
+  // Sprint 6: the ledger/invoicing/crm consumers of ordering.order_paid and
+  // ordering.order_released re-read the order through this application
+  // service rather than importing ORDER_REPOSITORY directly — the outbox
+  // payload carries no money amounts (.docs/03-bounded-contexts.md §5
+  // forbids a module importing another module's repository).
+  async findById(orderId: string): Promise<Order | null> {
+    return this.orders.findById(orderId);
+  }
+
+  async listPendingRelease(
+    storeId: string,
+    params: { page: number; limit: number },
+  ): Promise<{ items: PendingReleaseListItem[]; total: number }> {
+    return this.reads.listPendingRelease(storeId, params);
   }
 }

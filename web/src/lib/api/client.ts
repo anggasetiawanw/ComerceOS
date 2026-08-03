@@ -29,6 +29,16 @@ export interface PaginatedResult<T> {
   meta: PaginationMeta;
 }
 
+export interface CursorMeta {
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface CursorResult<T> {
+  items: T[];
+  meta: CursorMeta;
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -44,7 +54,7 @@ const isProblemDetail = (value: unknown): value is ProblemDetail =>
   'detail' in value &&
   'title' in value;
 
-const isEnvelope = (value: unknown): value is { data: unknown; meta?: PaginationMeta } =>
+const isEnvelope = (value: unknown): value is { data: unknown; meta?: unknown } =>
   typeof value === 'object' && value !== null && 'data' in value;
 
 const doFetchEnvelope = async <T>(
@@ -52,7 +62,7 @@ const doFetchEnvelope = async <T>(
   options: RequestOptions,
   accessToken: string | null,
   isRetry = false,
-): Promise<{ data: T; meta?: PaginationMeta }> => {
+): Promise<{ data: T; meta?: unknown }> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...options.headers };
   if (options.auth !== false && accessToken) {
     headers.Authorization = `Bearer ${accessToken}`;
@@ -109,7 +119,17 @@ export const apiClient = {
       { ...options, method: 'GET' },
       useAuthTokenStore.getState().accessToken,
     );
-    return { items: envelope.data, meta: envelope.meta ?? { page: 1, limit: envelope.data.length, total: envelope.data.length, hasMore: false } };
+    const meta = envelope.meta as PaginationMeta | undefined;
+    return { items: envelope.data, meta: meta ?? { page: 1, limit: envelope.data.length, total: envelope.data.length, hasMore: false } };
+  },
+  getCursorPaginated: async <T>(path: string, options: Options = {}): Promise<CursorResult<T>> => {
+    const envelope = await doFetchEnvelope<T[]>(
+      path,
+      { ...options, method: 'GET' },
+      useAuthTokenStore.getState().accessToken,
+    );
+    const meta = envelope.meta as CursorMeta | undefined;
+    return { items: envelope.data, meta: meta ?? { nextCursor: null, hasMore: false } };
   },
   post: <T>(path: string, body?: unknown, options: Options = {}) =>
     doFetch<T>(

@@ -13,3 +13,44 @@ export interface RelayOutboxEventsJob {
 export interface ProvisionDigitalDeliveryJob {
   orderId: string;
 }
+
+// Outbox-routed job payloads are forwarded verbatim from the triggering
+// event's toPayload() (see outbox-relay.processor.ts), so each interface
+// here must be a structural subset of its source event's payload.
+export interface CreditHoldingBalanceJob {
+  orderId: string;
+  storeId: string;
+}
+
+export interface ReleaseToAvailableJob {
+  orderId: string;
+  storeId: string;
+}
+
+export interface ReleaseHoldingBalanceJob {
+  batchSize: number;
+}
+
+export interface GenerateInvoiceJob {
+  orderId: string;
+  storeId: string;
+  buyerId: string;
+}
+
+export interface DeliverInvoiceJob {
+  invoiceId: string;
+  orderId: string;
+}
+
+export interface UpsertStoreBuyerJob {
+  orderId: string;
+  storeId: string;
+  buyerId: string;
+}
+
+// Not outbox-routed — enqueued directly by NotificationDispatcher with just
+// the delivery row id, keeping the queue message tiny and the full payload
+// in notification_deliveries for Sprint 12's retry job/admin viewer.
+export interface SendEmailJob {
+  deliveryId: string;
+}

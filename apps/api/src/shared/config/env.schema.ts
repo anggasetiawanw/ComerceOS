@@ -75,6 +75,12 @@ export const envSchema = z.object({
 
   OUTBOX_RELAY_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   OUTBOX_RELAY_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+
+  // Sprint 6 — Money. Blank PUPPETEER_EXECUTABLE_PATH selects NullPdfRenderer
+  // (same "blank config = null adapter" pattern as StorageModule/Midtrans),
+  // which is what keeps invoicing.int-spec.ts and local dev free of a
+  // Chromium dependency. docker/Dockerfile.worker sets a real path.
+  PUPPETEER_EXECUTABLE_PATH: z.string().optional().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

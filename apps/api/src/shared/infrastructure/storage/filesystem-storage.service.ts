@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { AppConfigService } from '../../config/app-config.service';
 import { StorageBucket, StorageUploader, UploadedObject } from './storage-uploader.port';
@@ -42,6 +42,11 @@ export class FilesystemStorageUploader implements StorageUploader {
 
   async createSignedUrl(params: { bucket: StorageBucket; path: string }): Promise<string> {
     return this.publicUrl(params.bucket, params.path);
+  }
+
+  async download(params: { bucket: StorageBucket; path: string }): Promise<Buffer> {
+    const source = path.join(this.uploadDir, params.bucket, params.path);
+    return readFile(source);
   }
 
   private publicUrl(bucket: StorageBucket, objectPath: string): string {

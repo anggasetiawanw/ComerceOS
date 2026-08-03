@@ -3,6 +3,7 @@ import type { NextConfig } from 'next';
 const supabaseImageHostname = process.env.NEXT_PUBLIC_SUPABASE_IMAGE_HOSTNAME;
 
 const nextConfig: NextConfig = {
+  transpilePackages: ['@nagihin/contracts'],
   async rewrites() {
     return {
       beforeFiles: [

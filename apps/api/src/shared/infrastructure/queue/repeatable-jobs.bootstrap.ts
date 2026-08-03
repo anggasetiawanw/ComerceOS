@@ -3,10 +3,15 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { AppConfigService } from '../../config/app-config.service';
 import { JOB_NAMES, QUEUE_NAMES, REPEATABLE_JOB_IDS } from './queue.constants';
-import { ExpireOrdersJob, RelayOutboxEventsJob } from './job-payloads';
+import { ExpireOrdersJob, RelayOutboxEventsJob, ReleaseHoldingBalanceJob } from './job-payloads';
 
 const EXPIRE_ORDERS_INTERVAL_MS = 10 * 60 * 1_000;
 const EXPIRE_ORDERS_BATCH_SIZE = 500;
+// .docs/10-background-jobs.md §4: release-holding-balance runs every 15
+// minutes, batch-limited and cursor-continued via findReleasableIds — see
+// modules/ordering/application/services/release-order.service.ts.
+const RELEASE_HOLDING_BALANCE_INTERVAL_MS = 15 * 60 * 1_000;
+const RELEASE_HOLDING_BALANCE_BATCH_SIZE = 500;
 
 // Registers repeatable jobs with fixed job IDs so a redeploy of the worker
 // never accumulates duplicate schedulers — a classic BullMQ trap that
@@ -39,6 +44,17 @@ export class RepeatableJobsBootstrap implements OnModuleInit {
       { name: JOB_NAMES.EXPIRE_ORDERS, data: { batchSize: EXPIRE_ORDERS_BATCH_SIZE } satisfies ExpireOrdersJob },
     );
 
-    this.logger.log('Repeatable jobs registered: relay-outbox-events (2s), expire-orders (10min)');
+    await this.orderQueue.upsertJobScheduler(
+      REPEATABLE_JOB_IDS.RELEASE_HOLDING_BALANCE,
+      { every: RELEASE_HOLDING_BALANCE_INTERVAL_MS },
+      {
+        name: JOB_NAMES.RELEASE_HOLDING_BALANCE,
+        data: { batchSize: RELEASE_HOLDING_BALANCE_BATCH_SIZE } satisfies ReleaseHoldingBalanceJob,
+      },
+    );
+
+    this.logger.log(
+      'Repeatable jobs registered: relay-outbox-events (2s), expire-orders (10min), release-holding-balance (15min)',
+    );
   }
 }

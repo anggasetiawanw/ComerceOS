@@ -1,10 +1,12 @@
 import {
+  FileText,
   LayoutDashboard,
   Package,
   Receipt,
   Settings,
   Store,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -21,6 +23,8 @@ export const DASHBOARD_NAV_ITEMS: DashboardNavItem[] = [
   { id: 'store', label: 'Toko', href: '/dashboard/toko', icon: Store },
   { id: 'products', label: 'Produk', href: '/dashboard/produk', icon: Package },
   { id: 'orders', label: 'Pesanan', href: '/dashboard/pesanan', icon: Receipt, disabled: true },
-  { id: 'buyers', label: 'Pembeli', href: '/dashboard/pembeli', icon: Users, disabled: true },
+  { id: 'finance', label: 'Keuangan', href: '/dashboard/keuangan', icon: Wallet },
+  { id: 'invoices', label: 'Invoice', href: '/dashboard/invoice', icon: FileText },
+  { id: 'buyers', label: 'Pembeli', href: '/dashboard/pembeli', icon: Users },
   { id: 'settings', label: 'Pengaturan', href: '/dashboard/pengaturan', icon: Settings },
 ];

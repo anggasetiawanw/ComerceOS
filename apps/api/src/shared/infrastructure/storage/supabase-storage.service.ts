@@ -95,6 +95,17 @@ export class SupabaseStorageService implements StorageUploader, OnModuleInit {
     return data.signedUrl;
   }
 
+  async download(params: { bucket: StorageBucket; path: string }): Promise<Buffer> {
+    const client = this.requireClient();
+    const bucketName = this.buckets[params.bucket];
+
+    const { data, error } = await client.storage.from(bucketName).download(params.path);
+    if (error || !data) {
+      throw new StorageUploadFailedError(error?.message ?? 'Download failed with no error detail');
+    }
+    return Buffer.from(await data.arrayBuffer());
+  }
+
   private requireClient(): SupabaseClient {
     if (!this.client) {
       throw new StorageNotConfiguredError();

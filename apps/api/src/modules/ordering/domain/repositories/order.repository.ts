@@ -12,5 +12,10 @@ export interface OrderRepository {
   findByMidtransTransactionId(transactionId: string): Promise<Order | null>;
   // pending_payment orders created before `cutoff` — feeds the expire-orders job.
   findExpirableIds(cutoff: Date, limit: number): Promise<string[]>;
+  // holding orders whose holding_until has elapsed, for auto-settlement
+  // stores only — feeds the release-holding-balance job
+  // (.docs/10-background-jobs.md §"release-holding-balance"). Manual-mode
+  // orders wait for POST /orders/:id/release.
+  findReleasableIds(now: Date, limit: number): Promise<string[]>;
   save(order: Order): Promise<void>;
 }

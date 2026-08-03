@@ -238,4 +238,12 @@ export class AppConfigService {
   get outboxRelayBatchSize(): number {
     return this.config.get('OUTBOX_RELAY_BATCH_SIZE', { infer: true });
   }
+
+  get puppeteerExecutablePath(): string {
+    return this.config.get('PUPPETEER_EXECUTABLE_PATH', { infer: true });
+  }
+
+  get isPdfRendererConfigured(): boolean {
+    return this.puppeteerExecutablePath.length > 0;
+  }
 }

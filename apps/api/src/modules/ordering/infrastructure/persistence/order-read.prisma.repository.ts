@@ -1,6 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../../shared/infrastructure/prisma/prisma.service';
-import { BuyerOrderListResult, OrderReadRepository } from '../../domain/repositories/order-read.repository';
+import {
+  BuyerOrderListResult,
+  OrderReadRepository,
+  PendingReleaseListItem,
+} from '../../domain/repositories/order-read.repository';
 
 interface BuyerOrderRow {
   id: string;
@@ -10,6 +14,13 @@ interface BuyerOrderRow {
   status: string;
   total: bigint;
   created_at: Date;
+}
+
+interface PendingReleaseRow {
+  id: string;
+  order_number: string;
+  amount: bigint;
+  holding_until: Date;
 }
 
 @Injectable()
@@ -40,6 +51,34 @@ export class OrderReadPrismaRepository implements OrderReadRepository {
         status: row.status,
         total: row.total.toString(),
         createdAt: row.created_at,
+      })),
+      total,
+    };
+  }
+
+  async listPendingRelease(
+    storeId: string,
+    params: { page: number; limit: number },
+  ): Promise<{ items: PendingReleaseListItem[]; total: number }> {
+    const offset = (params.page - 1) * params.limit;
+
+    const [rows, total] = await Promise.all([
+      this.prisma.$queryRaw<PendingReleaseRow[]>`
+        SELECT id, order_number, (total - platform_fee_amount) AS amount, holding_until
+        FROM orders
+        WHERE store_id = ${storeId} AND status = 'holding'
+        ORDER BY holding_until ASC
+        LIMIT ${params.limit} OFFSET ${offset}
+      `,
+      this.prisma.order.count({ where: { storeId, status: 'holding' } }),
+    ]);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        orderNumber: row.order_number,
+        amount: row.amount.toString(),
+        holdingUntil: row.holding_until,
       })),
       total,
     };

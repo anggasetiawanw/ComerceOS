@@ -18,4 +18,5 @@ export interface StorageUploader {
   }): Promise<UploadedObject>;
   remove(params: { bucket: StorageBucket; path: string }): Promise<void>;
   createSignedUrl(params: { bucket: StorageBucket; path: string; expiresInSeconds: number }): Promise<string>;
+  download(params: { bucket: StorageBucket; path: string }): Promise<Buffer>;
 }

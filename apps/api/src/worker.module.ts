@@ -12,6 +12,10 @@ import { RepeatableJobsModule } from './shared/infrastructure/queue/repeatable-j
 import { OrderingJobsModule } from './modules/ordering/ordering-jobs.module';
 import { PaymentsJobsModule } from './modules/payments/payments-jobs.module';
 import { DeliveryJobsModule } from './modules/delivery/delivery-jobs.module';
+import { LedgerJobsModule } from './modules/ledger/ledger-jobs.module';
+import { InvoicingJobsModule } from './modules/invoicing/invoicing-jobs.module';
+import { CrmJobsModule } from './modules/crm/crm-jobs.module';
+import { NotificationsJobsModule } from './modules/notifications/notifications-jobs.module';
 
 // Second entrypoint into the same @nagihin/api package (worker.main.ts),
 // not a separate apps/worker package. It boots via
@@ -34,6 +38,10 @@ import { DeliveryJobsModule } from './modules/delivery/delivery-jobs.module';
     OrderingJobsModule,
     PaymentsJobsModule,
     DeliveryJobsModule,
+    LedgerJobsModule,
+    InvoicingJobsModule,
+    CrmJobsModule,
+    NotificationsJobsModule,
   ],
 })
 export class WorkerModule {}
