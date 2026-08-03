@@ -17,7 +17,7 @@ export interface DispatchAttachment {
 // Row-first: every dispatch writes a notification_deliveries row (status
 // 'pending' or 'skipped') BEFORE anything is queued, so a crash right after
 // this call still leaves an auditable record (.docs/10 §3). The rendered
-// HTML itself is not persisted — SendEmailProcessor re-renders from
+// HTML itself is not persisted — NotificationQueueProcessor re-renders from
 // template+payload, which is why an attachment is passed as a storage
 // reference (bucket/path/filename) rather than raw bytes: bytes don't
 // belong in a jsonb column, and the processor downloads them at send time.

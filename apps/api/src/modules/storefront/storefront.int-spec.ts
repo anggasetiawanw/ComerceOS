@@ -67,6 +67,10 @@ describe('Storefront (integration)', () => {
   beforeEach(async () => {
     await prisma.notificationDelivery.deleteMany();
     await prisma.balanceTransaction.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();
@@ -202,12 +206,12 @@ describe('Storefront (integration)', () => {
       ).unwrap();
 
       const draft = (
-        await productService.create(store.id, { name: 'Draft', price: '10000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Draft', price: '10000', productType: 'physical' })
       ).unwrap();
       const active = (
-        await productService.create(store.id, { name: 'Aktif', price: '20000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Aktif', price: '20000', productType: 'physical' })
       ).unwrap();
-      await productService.publish(store.id, active.id);
+      await productService.publish(store.id, store.ownerId, active.id);
 
       const result = await storefrontService.getByUsername('tokoproduk');
 
@@ -221,13 +225,13 @@ describe('Storefront (integration)', () => {
         await storeService.createStore({ ownerId: user.id, username: 'tokoslugpublik' })
       ).unwrap();
       const product = (
-        await productService.create(store.id, {
+        await productService.create(store.id, store.ownerId, {
           name: 'Kaos Polos',
           price: '75000',
           productType: 'physical',
         })
       ).unwrap();
-      await productService.publish(store.id, product.id);
+      await productService.publish(store.id, store.ownerId, product.id);
 
       const result = await storefrontService.getProduct('tokoslugpublik', 'kaos-polos');
 
@@ -240,7 +244,7 @@ describe('Storefront (integration)', () => {
       const store = (
         await storeService.createStore({ ownerId: user.id, username: 'tokodraftslug' })
       ).unwrap();
-      await productService.create(store.id, { name: 'Belum Terbit', price: '10000', productType: 'physical' });
+      await productService.create(store.id, store.ownerId, { name: 'Belum Terbit', price: '10000', productType: 'physical' });
 
       const result = await storefrontService.getProduct('tokodraftslug', 'belum-terbit');
 
@@ -253,13 +257,13 @@ describe('Storefront (integration)', () => {
         await storeService.createStore({ ownerId: user.id, username: 'tokopublish' })
       ).unwrap();
       const product = (
-        await productService.create(store.id, { name: 'Produk A', price: '10000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Produk A', price: '10000', productType: 'physical' })
       ).unwrap();
 
       const before = await storefrontService.getByUsername('tokopublish');
       expect(before?.products).toHaveLength(0);
 
-      await productService.publish(store.id, product.id);
+      await productService.publish(store.id, store.ownerId, product.id);
 
       const after = await storefrontService.getByUsername('tokopublish');
       expect(after?.products).toHaveLength(1);
@@ -271,12 +275,12 @@ describe('Storefront (integration)', () => {
         await storeService.createStore({ ownerId: user.id, username: 'tokoarchive' })
       ).unwrap();
       const product = (
-        await productService.create(store.id, { name: 'Produk B', price: '10000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Produk B', price: '10000', productType: 'physical' })
       ).unwrap();
-      await productService.publish(store.id, product.id);
+      await productService.publish(store.id, store.ownerId, product.id);
 
       await storefrontService.getByUsername('tokoarchive');
-      await productService.archive(store.id, product.id);
+      await productService.archive(store.id, store.ownerId, product.id);
 
       const after = await storefrontService.getByUsername('tokoarchive');
       expect(after?.products).toHaveLength(0);

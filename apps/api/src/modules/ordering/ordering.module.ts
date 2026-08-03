@@ -5,6 +5,7 @@ import { StoreModule } from '../store/store.module';
 import { CatalogModule } from '../catalog/catalog.module';
 import { IdentityModule } from '../identity/identity.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { AuditModule } from '../administration/audit.module';
 import { ORDER_REPOSITORY } from './domain/repositories/order.repository';
 import { ORDER_READ_REPOSITORY } from './domain/repositories/order-read.repository';
 import { OrderPrismaRepository } from './infrastructure/persistence/order.prisma.repository';
@@ -26,6 +27,7 @@ import { StoreOrdersController } from './presentation/http/store-orders.controll
     CatalogModule,
     IdentityModule,
     OutboxModule,
+    AuditModule,
     forwardRef(() => PaymentsModule),
   ],
   controllers: [CheckoutController, BuyerOrdersController, StoreOrdersController],

@@ -48,4 +48,8 @@ export class OrderReadService {
   ): Promise<{ items: PendingReleaseListItem[]; total: number }> {
     return this.reads.listPendingRelease(storeId, params);
   }
+
+  async hasDisputedOrder(storeId: string): Promise<boolean> {
+    return this.reads.existsDisputedForStore(storeId);
+  }
 }

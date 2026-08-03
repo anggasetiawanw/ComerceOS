@@ -33,4 +33,7 @@ export interface PendingReleaseListItem {
 export interface OrderReadRepository {
   listForBuyer(buyerId: string, params: { page: number; limit: number }): Promise<BuyerOrderListResult>;
   listPendingRelease(storeId: string, params: { page: number; limit: number }): Promise<{ items: PendingReleaseListItem[]; total: number }>;
+  // Sprint 7 — the withdrawal-request validation rule ".docs/09 §7's "no
+  // unresolved dispute on orders contributing to the balance".
+  existsDisputedForStore(storeId: string): Promise<boolean>;
 }

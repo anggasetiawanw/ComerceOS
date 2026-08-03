@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Result } from '../../../../shared/kernel/result';
 import { TransactionManager } from '../../../../shared/infrastructure/prisma/transaction.manager';
 import { DomainEventPublisher } from '../../../../shared/infrastructure/events/domain-event-publisher';
+import { AUDIT_LOG_PORT, AuditLogPort } from '../../../administration/application/ports/audit-log.port';
 import { Slug } from '../../../../shared/kernel/value-objects/slug.vo';
 import { Money } from '../../../../shared/kernel/value-objects/money.vo';
 import { Product } from '../../domain/entities/product.aggregate';
@@ -49,6 +50,7 @@ export interface UpdateProductInput {
 export class ProductService {
   constructor(
     @Inject(PRODUCT_REPOSITORY) private readonly products: ProductRepository,
+    @Inject(AUDIT_LOG_PORT) private readonly auditLog: AuditLogPort,
     private readonly transactionManager: TransactionManager,
     private readonly events: DomainEventPublisher,
   ) {}
@@ -63,7 +65,11 @@ export class ProductService {
     return Result.ok(product);
   }
 
-  async create(storeId: string, params: CreateProductInput): Promise<Result<Product, CreateProductError>> {
+  async create(
+    storeId: string,
+    actorUserId: string,
+    params: CreateProductInput,
+  ): Promise<Result<Product, CreateProductError>> {
     const priceResult = Money.fromString(params.price);
     if (priceResult.isErr()) return Result.err(new InvalidProductError(priceResult.unwrapErr().message));
 
@@ -95,7 +101,16 @@ export class ProductService {
     if (productResult.isErr()) return Result.err(productResult.unwrapErr());
     const product = productResult.unwrap();
 
-    await this.transactionManager.runInTransaction(() => this.products.save(product));
+    await this.transactionManager.runInTransaction(async () => {
+      await this.products.save(product);
+      await this.auditLog.record({
+        actorType: 'user',
+        actorId: actorUserId,
+        action: 'product.created',
+        entityType: 'product',
+        entityId: product.id,
+      });
+    });
     await this.events.publishAll(product.pullDomainEvents());
 
     return Result.ok(product);
@@ -103,6 +118,7 @@ export class ProductService {
 
   async update(
     storeId: string,
+    actorUserId: string,
     productId: string,
     params: UpdateProductInput,
   ): Promise<Result<Product, UpdateProductError>> {
@@ -150,7 +166,16 @@ export class ProductService {
       product.changeSlug(nextSlug);
     }
 
-    await this.transactionManager.runInTransaction(() => this.products.save(product));
+    await this.transactionManager.runInTransaction(async () => {
+      await this.products.save(product);
+      await this.auditLog.record({
+        actorType: 'user',
+        actorId: actorUserId,
+        action: 'product.updated',
+        entityType: 'product',
+        entityId: product.id,
+      });
+    });
     await this.events.publishAll(product.pullDomainEvents());
 
     return Result.ok(product);
@@ -158,6 +183,7 @@ export class ProductService {
 
   async publish(
     storeId: string,
+    actorUserId: string,
     productId: string,
   ): Promise<Result<Product, ProductNotFoundError | DigitalProductRequiresFileError>> {
     const product = await this.products.findById(productId);
@@ -166,19 +192,41 @@ export class ProductService {
     const result = product.publish();
     if (result.isErr()) return Result.err(result.unwrapErr());
 
-    await this.transactionManager.runInTransaction(() => this.products.save(product));
+    await this.transactionManager.runInTransaction(async () => {
+      await this.products.save(product);
+      await this.auditLog.record({
+        actorType: 'user',
+        actorId: actorUserId,
+        action: 'product.published',
+        entityType: 'product',
+        entityId: product.id,
+      });
+    });
     await this.events.publishAll(product.pullDomainEvents());
 
     return Result.ok(product);
   }
 
-  async archive(storeId: string, productId: string): Promise<Result<Product, ProductNotFoundError>> {
+  async archive(
+    storeId: string,
+    actorUserId: string,
+    productId: string,
+  ): Promise<Result<Product, ProductNotFoundError>> {
     const product = await this.products.findById(productId);
     if (!product || !product.belongsTo(storeId)) return Result.err(new ProductNotFoundError());
 
     product.archive();
 
-    await this.transactionManager.runInTransaction(() => this.products.save(product));
+    await this.transactionManager.runInTransaction(async () => {
+      await this.products.save(product);
+      await this.auditLog.record({
+        actorType: 'user',
+        actorId: actorUserId,
+        action: 'product.archived',
+        entityType: 'product',
+        entityId: product.id,
+      });
+    });
     await this.events.publishAll(product.pullDomainEvents());
 
     return Result.ok(product);

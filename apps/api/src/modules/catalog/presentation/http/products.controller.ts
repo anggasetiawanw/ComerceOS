@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post, Query,
 import { ApiTags } from '@nestjs/swagger';
 import { unwrapOrThrow } from '../../../../shared/presentation/http/result.helper';
 import { Paginated } from '../../../../shared/presentation/dto/paginated.dto';
+import { CurrentUser } from '../../../../shared/presentation/decorators/current-user.decorator';
+import { CurrentUserPayload } from '../../../../shared/security/current-user.interface';
 import { CurrentStore } from '../../../store/presentation/decorators/current-store.decorator';
 import { CurrentStorePayload, StoreOwnerGuard } from '../../../store/presentation/guards/store-owner.guard';
 import { ProductService } from '../../application/services/product.service';
@@ -37,10 +39,11 @@ export class ProductsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(
+    @CurrentUser() user: CurrentUserPayload,
     @CurrentStore() store: CurrentStorePayload,
     @Body() dto: CreateProductDto,
   ): Promise<ProductResponseDto> {
-    const result = await this.products.create(store.id, dto);
+    const result = await this.products.create(store.id, user.id, dto);
     return ProductResponseDto.fromDomain(unwrapOrThrow(result));
   }
 
@@ -55,29 +58,32 @@ export class ProductsController {
 
   @Patch(':id')
   async update(
+    @CurrentUser() user: CurrentUserPayload,
     @CurrentStore() store: CurrentStorePayload,
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
   ): Promise<ProductResponseDto> {
-    const result = await this.products.update(store.id, id, dto);
+    const result = await this.products.update(store.id, user.id, id, dto);
     return ProductResponseDto.fromDomain(unwrapOrThrow(result));
   }
 
   @Post(':id/publish')
   async publish(
+    @CurrentUser() user: CurrentUserPayload,
     @CurrentStore() store: CurrentStorePayload,
     @Param('id') id: string,
   ): Promise<ProductResponseDto> {
-    const result = await this.products.publish(store.id, id);
+    const result = await this.products.publish(store.id, user.id, id);
     return ProductResponseDto.fromDomain(unwrapOrThrow(result));
   }
 
   @Post(':id/archive')
   async archive(
+    @CurrentUser() user: CurrentUserPayload,
     @CurrentStore() store: CurrentStorePayload,
     @Param('id') id: string,
   ): Promise<ProductResponseDto> {
-    const result = await this.products.archive(store.id, id);
+    const result = await this.products.archive(store.id, user.id, id);
     return ProductResponseDto.fromDomain(unwrapOrThrow(result));
   }
 }

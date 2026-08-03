@@ -1,8 +1,13 @@
+import { MetricsCards } from '@/features/admin/components/metrics-cards';
+
 const AdminOverviewPage = () => {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 p-16 text-center">
-      <h1 className="text-2xl font-semibold">Admin</h1>
-      <p className="text-muted-foreground">Belum tersedia.</p>
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-semibold">Admin</h1>
+        <p className="text-sm text-muted-foreground">Metrik platform: GMV, take rate, dan liabilitas seller.</p>
+      </div>
+      <MetricsCards />
     </div>
   );
 };

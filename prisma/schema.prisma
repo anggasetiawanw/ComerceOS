@@ -90,8 +90,19 @@ enum BalanceTransactionType {
 
 enum WithdrawalStatus {
   requested
+  approved
   paid
   rejected
+}
+
+// Sprint 7 — Administration. Distinct from StatusActorType (order-history
+// actors: system/seller/buyer/admin) — audit_logs uses the coarser
+// user/admin/system split from .docs/brief/database-schema.md's audit_logs
+// table, where 'user' covers both buyer and seller actions.
+enum ActorType {
+  user
+  admin
+  system
 }
 
 enum InvoiceSentVia {
@@ -126,12 +137,14 @@ model User {
   role            UserRole  @default(buyer)
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  refreshTokens      RefreshToken[]
-  verificationTokens VerificationToken[]
-  store              Store?
-  orders             Order[]
-  orderStatusChanges OrderStatusHistory[]
-  storeBuyerRecords  StoreBuyer[]
+  refreshTokens       RefreshToken[]
+  verificationTokens  VerificationToken[]
+  store               Store?
+  orders              Order[]
+  orderStatusChanges  OrderStatusHistory[]
+  storeBuyerRecords   StoreBuyer[]
+  auditLogs           AuditLog[]
+  reviewedWithdrawals Withdrawal[]
 
   @@map("users")
 }
@@ -514,15 +527,41 @@ model Withdrawal {
   status              WithdrawalStatus @default(requested)
   bankAccountSnapshot Json             @map("bank_account_snapshot")
   requestedAt         DateTime         @default(now()) @map("requested_at")
+  approvedAt          DateTime?        @map("approved_at")
+  rejectedAt          DateTime?        @map("rejected_at")
   paidAt              DateTime?        @map("paid_at")
+  reviewedById        String?          @map("reviewed_by_id")
   adminNote           String?          @map("admin_note")
 
   store               Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
   bankAccount         BankAccount?         @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  reviewedBy          User?                @relation(fields: [reviewedById], references: [id], onDelete: SetNull)
   balanceTransactions BalanceTransaction[]
 
   @@index([status, requestedAt])
   @@map("withdrawals")
+}
+
+// audit_logs — migration 012 (.docs/03-bounded-contexts.md §3.13,
+// .docs/brief/database-schema.md §audit_logs). actor_id is nullable and
+// SET NULL on user deletion — the row (and its actor_type/action/entity
+// trail) must survive even if the acting user's account is later removed.
+model AuditLog {
+  id         String    @id
+  actorType  ActorType @map("actor_type")
+  actorId    String?   @map("actor_id")
+  action     String
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@map("audit_logs")
 }
 
 // invoices — Sprint 6 (migration 008). invoice_number is unique per store,

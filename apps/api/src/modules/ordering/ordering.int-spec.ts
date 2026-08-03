@@ -117,6 +117,10 @@ describe('Ordering (integration)', () => {
   beforeEach(async () => {
     await prisma.notificationDelivery.deleteMany();
     await prisma.balanceTransaction.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();
@@ -146,14 +150,14 @@ describe('Ordering (integration)', () => {
     const seller = await createUser(prisma, params.sellerEmail, 'seller');
     const store = (await storeService.createStore({ ownerId: seller.id, username: params.username })).unwrap();
     const product = (
-      await productService.create(store.id, { name: 'Ebook Belajar Prisma', price: params.price, productType: 'digital' })
+      await productService.create(store.id, store.ownerId, { name: 'Ebook Belajar Prisma', price: params.price, productType: 'digital' })
     ).unwrap();
     await digitalFileService.upload(store.id, product.id, {
       buffer: Buffer.from('fake ebook content'),
       mimetype: 'application/pdf',
       originalname: 'ebook.pdf',
     });
-    await productService.publish(store.id, product.id);
+    await productService.publish(store.id, store.ownerId, product.id);
     return { store, product };
   };
 

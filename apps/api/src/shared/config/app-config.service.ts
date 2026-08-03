@@ -246,4 +246,16 @@ export class AppConfigService {
   get isPdfRendererConfigured(): boolean {
     return this.puppeteerExecutablePath.length > 0;
   }
+
+  get withdrawalMinAmount(): number {
+    return this.config.get('WITHDRAWAL_MIN_AMOUNT', { infer: true });
+  }
+
+  get adminAlertEmail(): string {
+    return this.config.get('ADMIN_ALERT_EMAIL', { infer: true });
+  }
+
+  get isAdminAlertConfigured(): boolean {
+    return this.adminAlertEmail.length > 0;
+  }
 }

@@ -606,18 +606,146 @@ Decisions and drift from the docs, recorded here rather than silently:
 ### Sprint 7 — Payouts & admin
 **Goal:** money can leave, safely.
 
-- [ ] Migration 012: `audit_logs`
-- [ ] Bank account CRUD with a single default
-- [ ] Withdrawal request: locked balance check, pending-reservation logic, snapshot
-- [ ] Admin: approve / reject / mark-paid, with the ledger debit on mark-paid
-- [ ] `AuditLogPort` + writes from every mutating context
-- [ ] Admin auth, role assignment, admin route tree
-- [ ] Buyer `/akun`: order history, order detail, downloads
-- [ ] Frontend: `/dashboard/keuangan/penarikan`, `/rekening`, `/admin`, `/admin/penarikan`
-- [ ] Tests: withdrawal concurrency, admin RBAC, cross-tenant isolation suite
+- [x] Migration 012: `audit_logs` (+ `WithdrawalStatus.approved`, `withdrawals.approved_at`/`rejected_at`/
+  `reviewed_by_id`, a hand-written partial unique index — see drift below)
+- [x] Bank account CRUD with a single default
+- [x] Withdrawal request: locked balance check, pending-reservation logic, snapshot
+- [x] Admin: approve / reject / mark-paid, with the ledger debit on mark-paid
+- [x] `AuditLogPort` + writes from every mutating context — ledger (withdrawals, bank accounts), store
+  (settlement mode), catalog (product create/update/publish/archive), ordering (seller-initiated release)
+- [x] Admin auth, role assignment, admin route tree
+- [x] Buyer `/akun`: order history, order detail, downloads — already shipped in Sprint 6, reverified here
+- [x] Frontend: `/dashboard/keuangan/penarikan`, `/rekening`, `/admin`, `/admin/penarikan`
+- [x] Tests: withdrawal concurrency, admin RBAC, cross-tenant isolation suite
 
 **Deliverable:** a seller requests a withdrawal, an admin approves and marks it paid, and the ledger
 balances.
+
+**Status: done.** Verified live 2026-08-03 against real Postgres + Redis — 61 API unit suites (989 tests,
+including the new `Withdrawal` aggregate's every legal/forbidden transition incl. the markPaid replay
+guard, `BankAccountSnapshot`'s bank-code/account-number/holder-name validation, and
+`StoreBalance.debitForWithdrawal`'s insufficient-balance/no-partial-mutation cases) pass, plus 10/12
+integration suites run for real: the new `payouts.int-spec.ts` (10/10 — two concurrent withdrawal requests
+for the same balance leave exactly one `requested` row via the store row lock; a second request while one
+is pending is rejected; a request above the withdrawable balance is rejected; request → approve → mark-paid
+debits `available` by exactly the amount with a gapless snapshot chain and a three-row audit trail; a
+second mark-paid call is rejected by the aggregate's own status guard with no second ledger row; reject
+leaves the balance and ledger untouched; `Idempotency-Key` replay/conflict on `POST /withdrawals`; concurrent
+`setDefault` calls leave exactly one default bank account; removing a bank account referenced by a pending
+withdrawal is refused), the new `administration.int-spec.ts` (6/6 — every admin controller carries
+`@Roles('admin')`; an admin action is always `actor_type = 'admin'`, a seller action always `'user'`; the
+audit write and the withdrawal transition commit or roll back together — a rejected illegal transition
+writes zero audit rows; the admin queue's status filter round-trips through Postgres without an enum/text
+comparison error, a regression test for a real bug — see below), and the new `tenant-isolation.int-spec.ts`
+(5/5 — a sweep across products, orders, invoices, bank accounts, and withdrawals: store B gets 404, never
+403, on every one of store A's resources). `ledger.int-spec.ts`, `store.int-spec.ts`, `identity.int-spec.ts`,
+`crm.int-spec.ts`, `invoicing.int-spec.ts`, `storefront.int-spec.ts`, and `notifications.int-spec.ts` all
+still pass unmodified after adding `withdrawal`/`bank_account` cleanup to their fixtures (see drift below).
+`catalog.int-spec.ts` (5 failures) and `ordering.int-spec.ts` (1 failure) are the same pre-existing
+environmental failures flagged in Sprints 5–6 — this environment's `.env` carries real-looking
+`SUPABASE_URL`/`MIDTRANS_SERVER_KEY` values that select the real adapters over the null/stub ones; both
+failures are byte-for-byte the same as previously documented and unrelated to this sprint's code.
+`pnpm run lint`, `pnpm run typecheck`, and `pnpm run build` are clean for `apps/api` and `web`; `next build`
+prerenders `/admin`, `/admin/penarikan`, `/dashboard/keuangan/penarikan`, and `/dashboard/keuangan/rekening`
+alongside the existing routes.
+
+A real bug surfaced only by a live HTTP smoke test, not by any automated test: `WithdrawalReadRepository
+.listForAdmin`'s raw SQL compared the `status` query param (bound as `text`) directly against `withdrawals
+.status` (a native Postgres `WithdrawalStatus` enum column), which Postgres rejects outright — `operator
+does not exist: "WithdrawalStatus" = text` — a 500 on the one query every admin queue page load makes. Every
+integration test that exercised `listForAdmin` did so without a status filter, so the broken code path was
+never hit. Fixed by casting the column (`w.status::text = ${status}`) rather than the parameter, and a
+regression test was added to `administration.int-spec.ts` that calls `listQueue({ status: 'requested' })`
+directly. The live smoke test that caught it: register a seller, verify by hand, log in, create a store,
+seed `available_balance`, add a default bank account, request a withdrawal below the minimum (422), above
+the withdrawable balance (422), a valid request (201), a second request while pending (409) — then register
+and promote a second user via `pnpm admin:grant`, log in as admin, list the queue (this is what 500'd),
+approve, mark paid, and confirm `available_balance` dropped by exactly the amount with one `withdrawal_paid`
+ledger row and a three-row audit trail; separately, requested → rejected leaves the balance untouched; a
+seller JWT against `/admin/metrics` gets a real 403 from `RolesGuard`.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- **`WithdrawalStatus` gains `approved`**, not in the original Sprint 6 schema. `.docs/05-api-roadmap.md`
+  §15 lists `/approve` and `/mark-paid` as separate P0 admin endpoints and `.docs/09-payments-ledger.md`
+  §7's sequence diagram puts a manual bank transfer between them; without a distinct status an admin has no
+  way to tell which requests they have already picked up. `approved_at`/`rejected_at`/`reviewed_by_id`
+  (fk → `users`, `SET NULL`) let the admin queue avoid joining `audit_logs` for "who reviewed this."
+  `requested → paid` is deliberately absent from `WithdrawalTransitionPolicy` — an admin must approve first.
+- **A second hand-written partial unique index ships in migration 012**, same precedent as migration 007's
+  two: `balance_transactions (withdrawal_id, type) WHERE withdrawal_id IS NOT NULL AND type =
+  'withdrawal_paid'` — the DB-level backstop behind the withdrawal replay guard. The **application-level**
+  half of that guard is different from the ledger's credit/release precedent, though: `Withdrawal.markPaid`
+  is a state transition (`approved → paid`, legal exactly once), so the aggregate's own status check is
+  what blocks a second mark-paid call — there is no separate `existsForWithdrawal` read, unlike
+  `LedgerService`'s `alreadyCredited`/`alreadyReleased` checks, which exist only because crediting an order
+  doesn't itself change the order's status.
+- **Withdrawals and bank accounts live in `modules/ledger`, not a new module.** `.docs/03-bounded-contexts.md`
+  §3.6 assigns both to Ledger & Payouts, and the withdrawal invariant ("sufficient available balance **and**
+  a valid destination") is only enforceable where both halves live together.
+- **`modules/administration` owns `audit_logs`, admin RBAC, and the admin controllers, and never touches
+  `withdrawals` directly** — `AdminWithdrawalService` is a thin pass-through to ledger's own
+  `WithdrawalService`/`WithdrawalReadService`, so the withdrawal invariant stays enforced in exactly one
+  place regardless of which actor (seller or admin) is driving it.
+- **`AuditModule` is a separate, standalone module from `AdministrationModule`** — `modules/administration
+  /audit.module.ts` depends only on `PrismaModule` (global), exporting `AUDIT_LOG_PORT`. This is what lets
+  `LedgerModule`, `StoreModule`, `CatalogModule`, and `OrderingModule` import it directly for
+  `AuditLogPort` without importing the rest of `AdministrationModule` — which itself imports `LedgerModule`
+  for `AdminWithdrawalService` — avoiding a module cycle. `AdministrationModule` imports `AuditModule` too,
+  so `AdminAuditController` and `AdminWithdrawalService` share the same `AuditService` instance.
+- **A default bank account is required to request a withdrawal; a *verified* one is not.**
+  `.docs/09-payments-ledger.md` §7 says "a verified default bank account exists," but `bank_accounts
+  .verified_at` is documented since Sprint 3 as "reserved for future name-match verification" and nothing
+  in this codebase ever sets it — enforcing it would block every withdrawal that will ever be made.
+- **Admin role assignment is `prisma/scripts/grant-admin.ts` (`pnpm admin:grant -- <email>`), never an
+  endpoint** — `.docs/07-auth.md` §4's "manual database assignment." Like `prisma:seed`, it expects
+  `DATABASE_URL`/`DIRECT_DATABASE_URL` already in the environment (`prisma migrate`/`generate` load `.env`
+  themselves via the Prisma CLI; a plain `tsx` script does not) — not a Sprint 7 regression, the same
+  precondition `prisma:seed` has always had, just newly exercised.
+- **Bank codes ship in `packages/contracts`** (new file `bank-codes.ts`), not as an API-only constant.
+  Sprint 3 deferred bank codes to Sprint 7 rather than a database table (§ that sprint's drift notes); the
+  API's `BankCode` validation and the web `/rekening` form's `<select>` need the exact same frozen list, so
+  `packages/contracts` — already the shared boundary for the invoice template — is what both sides import
+  rather than duplicating the list or making the web app call the API just to render a dropdown.
+- **The notification queue gained a second job type on one processor class.** Sprint 6 already established
+  that two `@Processor`-decorated classes on the same BullMQ queue name compete for jobs regardless of job
+  name. `SendEmailProcessor` is renamed `NotificationQueueProcessor` and now switches on `job.name` for both
+  `send-email` and the new `dispatch-withdrawal-notification` (all three `ledger.withdrawal_*` outbox events
+  route to one job name; the event's own `toPayload()` carries a `template` discriminator field, since the
+  outbox relay forwards `event.payload` verbatim with no per-route transform). `NotificationsJobsModule` now
+  imports `LedgerModule` for `WithdrawalNotificationService` — no cycle, since `LedgerModule` imports
+  `NotificationsModule` (a different file from `NotificationsJobsModule`) for the same reason `AuditModule`
+  stays standalone.
+- **The admin withdrawal queue has no row selection**, despite Sprint 6 flagging the admin queue as the
+  first `DataTable` consumer that would need it. Approve/reject/mark-paid are inherently one-withdrawal-at-
+  a-time operations for a solo operator; batch actions would need a product reason to exist, not just the
+  capability. Deferred, not silently dropped.
+- **`GET /balance` gained a `withdrawable` field** (`available − SUM(pending withdrawals)`) alongside the
+  existing `holding`/`available` — not in any doc, but the seller UI must never show money it cannot
+  actually request; `BalanceReadService` now injects `WithdrawalRepository` to compute it.
+- **Cross-tenant isolation coverage is a sweep across five resource types with single-record store-scoped
+  reads** (products, orders via `ReleaseOrderService`'s `expectedStoreId`, invoices, bank accounts,
+  withdrawals) — not literally "every seller endpoint" per Sprint 5/6's stated gap, since buyers and ledger
+  transactions are list-only endpoints scoped by `storeId` at the query level with no single-record
+  ownership check to probe; there is structurally nothing to leak there. Products' isolation was already
+  covered in `catalog.int-spec.ts`; included again here for one consolidated sweep.
+- **The RBAC check is metadata-level, not a full HTTP+JWT integration test.** No `*.int-spec.ts` file in
+  this codebase bootstraps a real Nest HTTP server with supertest — every existing suite calls application
+  services directly. Rather than introduce a new testing pattern for one sprint, `administration.int-spec.ts`
+  asserts `@Roles('admin')` metadata is present on every admin controller (the wiring a guard unit test
+  cannot catch) and leans on `roles.guard.spec.ts`'s existing exhaustive unit coverage of `RolesGuard`'s own
+  decision logic. The live smoke test's `403` on `/admin/metrics` with a seller JWT is the one place this
+  sprint actually proved the full HTTP+guard chain end to end.
+- **Every existing `*.int-spec.ts` file needed `withdrawal`/`bank_account` cleanup added to its `beforeEach`**
+  — migration 012's FK from `bank_accounts`/`withdrawals` to `stores` is `RESTRICT`, and every pre-Sprint-7
+  suite's cleanup deleted `stores` without knowing these tables would ever be populated. Running the full
+  integration suite together (not file-by-file) surfaced this immediately as a foreign-key violation on
+  `store.deleteMany()`; fixed identically across all eight files.
+
+Not done, and cut deliberately: `auto-force-release` (Sprint 8 polish, per `.docs/10-background-jobs.md`
+§4 — manual-mode orders 30+ days past `paid_at`); `/admin/sengketa`, `/admin/rekonsiliasi`,
+`/admin/webhook`, `/admin/audit` viewer page, `GET /admin/stores`, `GET /admin/users` (all Sprint 11/12,
+per the roadmap; the audit **write** path and `GET /admin/audit-logs` API ship now, the viewer page does
+not).
 
 ---
 
@@ -764,12 +892,13 @@ balances.
 - [x] Ledger service; private balance mutation (`LedgerService.creditHoldingForOrder`/
   `releaseToAvailableForOrder` — the only application service that may call
   `StoreBalanceRepository.save`, enforced by `architecture.spec.ts`)
-- [ ] Withdrawal service with pending-reservation logic — Sprint 7
-- [ ] Bank account service — Sprint 7 (table is schema-only this sprint)
+- [x] Withdrawal service with pending-reservation logic (`WithdrawalService.request` — store row locked
+  first, `existsPendingForStore` + `withdrawable = available − SUM(pending)`)
+- [x] Bank account service (`BankAccountService`)
 - [x] `BalanceReconciler` (recompute from ledger sums, report drift — no caller yet; Sprint 12's
   `verify-store-balances` job is its first consumer)
-- [ ] Platform revenue + seller liability calculators — stubbed, no caller until Sprint 7's admin
-  finance screen
+- [x] Platform revenue + seller liability calculators (`PlatformMetricsService`, raw SQL, no writes) —
+  `GET /admin/metrics`
 
 **Supporting**
 - [x] Invoice number generator, renderer, delivery service (`InvoiceService`, `InvoiceDeliveryService`,
@@ -779,9 +908,10 @@ balances.
 - [ ] `Promotion` aggregate, validator, calculator — Sprint 10
 - [x] `NotificationChannel` port, email adapter, dispatcher — WhatsApp adapter is Sprint 9; the port
   and dispatch loop already support a second channel
-- [ ] `AuditLogPort` + service — Sprint 7
+- [x] `AuditLogPort` + service (`AuditService`, standalone `AuditModule`) — writes from ledger, store,
+  catalog, ordering
 - [ ] Reporting read repositories — Sprint 12/13
-- [ ] Admin services — Sprint 7
+- [x] Admin services (`AdminWithdrawalService`, `PlatformMetricsService`)
 
 ### Frontend
 
@@ -791,12 +921,14 @@ balances.
   fetcher (`lib/api/server-client.ts`, zod-validated) for SSR reads
 - [x] TanStack Query provider, per-feature query keys
 - [x] Auth store (Zustand, memory only), middleware guard
-- [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard and storefront shells
-  done; marketing, admin, buyer still placeholders
+- [ ] Layout shells: marketing, storefront, dashboard, admin, buyer — dashboard, storefront, and admin
+  (`AdminShell`/`AdminSidebar`, client-side `AdminRoleGuard`) shells done; marketing and buyer still
+  placeholders
 - [x] `DataTable` with responsive card fallback — `@tanstack/react-table` + the `table` primitive,
   cursor pagination, required loading/empty/error props, CSS-only card fallback below `md`. Server-side
-  column sorting was cut (buyers' sort is a `<Select>` dropdown instead); no row selection yet — Sprint
-  7's admin queue is the first thing that needs it
+  column sorting was cut (buyers' sort is a `<Select>` dropdown instead). Row selection stays unbuilt —
+  Sprint 7's admin withdrawal queue turned out not to need it after all (approve/reject/mark-paid are
+  inherently one-at-a-time for a solo operator; see that sprint's drift notes)
 - [x] `EmptyState` / `ErrorState` / skeleton set
 - [x] `MoneyDisplay`, `MoneyInput` (bigint-safe)
 - [x] `OrderStatusBadge`, `HoldingCountdown`, `BalanceCard` — `HoldingCountdown`'s per-order release
@@ -808,13 +940,14 @@ balances.
   redirects to checkout; Tanya stays inert until Sprint 9 as documented
 - [x] Checkout + Snap integration + status polling
 - [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko`, `pengaturan`,
-  `keuangan`, `pembeli`, `invoice` done; seller order pages and admin still land sprint-by-sprint
+  `keuangan` (+ `penarikan`, `rekening`), `pembeli`, `invoice` done; seller order pages still land later
 - [x] Buyer `/akun` pages — order history, order detail, downloads; profile settings still a placeholder
-- [ ] Admin pages — Sprint 7
+- [x] Admin pages — `/admin` (metrics), `/admin/penarikan` (queue); `/admin/sengketa`, `/admin/rekonsiliasi`,
+  `/admin/toko`, `/admin/pengguna`, `/admin/audit` stay Sprint 11/12 placeholders in the sidebar
 - [x] `InvoicePreview` — opens a freshly-signed PDF URL rather than rendering the shared HTML template
   in an iframe, since the full view model isn't exposed over the seller API this sprint (see drift notes)
 - [ ] Charts (dynamically imported) — Sprint 13
-- [ ] Mobile pass on every screen — ongoing; this sprint's 3 new pages follow the existing responsive
+- [ ] Mobile pass on every screen — ongoing; this sprint's new pages follow the existing responsive
   patterns but a dedicated pass across the whole app is still Sprint 8
 
 ### DevOps
@@ -837,8 +970,8 @@ balances.
 
 ### Database
 
-- [ ] Migrations 001–019 in order (001–011 done across Sprints 1–5, 007/008/010/017 done this sprint —
-  017 pulled forward from Sprint 12, same move Sprint 5 made with 009; 012+ later)
+- [ ] Migrations 001–019 in order (001–011 across Sprints 1–5, 007/008/010/017 in Sprint 6, 012 this
+  sprint — 013+ later)
 - [x] Check constraints from [06 §4](./06-database-roadmap.md#4-constraints) for the tables this sprint
   added (`balance_transactions`, `withdrawals`, `store_buyers`, plus `stores`' non-negative balance
   check) — partial-index predicates are plain non-partial `@@index` entries except two hand-written
@@ -875,11 +1008,25 @@ balances.
 - [x] Integration: cross-tenant isolation for the ordering/delivery endpoints this sprint added, plus
   invoice ownership checks (`InvoiceReadService.getForStore`) — not yet **every** seller endpoint per the
   doc's full ambition
+- [x] Integration: withdrawal concurrency — two concurrent requests for the same balance via `Promise.all`
+  leave exactly one `requested` row, proving the `FOR UPDATE` lock on `stores` extends to withdrawals
+  (`payouts.int-spec.ts`)
+- [x] Integration: admin RBAC — every admin controller carries `@Roles('admin')` (metadata-level, not a
+  full HTTP+JWT test — no `*.int-spec.ts` file in this codebase bootstraps a real server with supertest;
+  see Sprint 7's drift notes) and admin actions are always `actor_type = 'admin'`, never `'user'`
+  (`administration.int-spec.ts`)
+- [x] Integration: cross-tenant isolation sweep — products, orders, invoices, bank accounts, withdrawals,
+  asserting 404 never 403 on a cross-store id (`tenant-isolation.int-spec.ts`) — buyers and ledger
+  transactions are list-only endpoints scoped by `storeId` with no single-record ownership check to probe
 - [ ] Integration: gross profit never joins `products` — Sprint 13
 - [ ] E2E: signup → store → product → checkout → invoice → download — the integration suite covers this
   path service-by-service (checkout → webhook → ledger credit → invoice generation → download) but not
   as one Playwright E2E test yet
-- [ ] E2E: withdrawal request → admin approve → mark paid — Sprint 7
+- [ ] E2E: withdrawal request → admin approve → mark paid as one Playwright test — not built; proven
+  instead by a live HTTP smoke test through the real server (register → verify → login → create store →
+  add bank account → request → validation errors → admin approve → mark-paid → balance debited by exactly
+  the amount), which is what caught the `listForAdmin` enum-cast bug no automated test hit — see Sprint 7's
+  drift notes
 - [x] Architecture test: no framework imports in `domain/` — `ledger`/`invoicing`/`crm`/`notifications`
   domain layers pass the existing `architecture.spec.ts` fitness test unmodified, which also gained two
   new blocks this sprint: the `stores.holding_balance`/`available_balance`/`invoice_counter` write

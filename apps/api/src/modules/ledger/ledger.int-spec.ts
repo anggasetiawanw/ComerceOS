@@ -108,6 +108,8 @@ describe('Ledger (integration)', () => {
   beforeEach(async () => {
     await prisma.notificationDelivery.deleteMany();
     await prisma.balanceTransaction.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();

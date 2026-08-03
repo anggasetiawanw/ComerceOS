@@ -74,6 +74,10 @@ describe('Catalog (integration)', () => {
   beforeEach(async () => {
     await prisma.notificationDelivery.deleteMany();
     await prisma.balanceTransaction.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
+    await prisma.withdrawal.deleteMany();
+    await prisma.bankAccount.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.storeBuyer.deleteMany();
     await prisma.digitalDelivery.deleteMany();
@@ -108,7 +112,7 @@ describe('Catalog (integration)', () => {
     const store = await createStore('seller1@example.com', 'tokocatalog1');
 
     const created = (
-      await productService.create(store.id, { name: 'Produk Mahal', price: '999999999', productType: 'physical' })
+      await productService.create(store.id, store.ownerId, { name: 'Produk Mahal', price: '999999999', productType: 'physical' })
     ).unwrap();
 
     const row = await prisma.product.findUnique({ where: { id: created.id } });
@@ -118,9 +122,9 @@ describe('Catalog (integration)', () => {
   describe('slugs', () => {
     it('rejects a duplicate explicit slug within the same store', async () => {
       const store = await createStore('seller2@example.com', 'tokocatalog2');
-      await productService.create(store.id, { name: 'A', slug: 'produk-a', price: '1000', productType: 'physical' });
+      await productService.create(store.id, store.ownerId, { name: 'A', slug: 'produk-a', price: '1000', productType: 'physical' });
 
-      const result = await productService.create(store.id, {
+      const result = await productService.create(store.id, store.ownerId, {
         name: 'B',
         slug: 'produk-a',
         price: '2000',
@@ -135,8 +139,8 @@ describe('Catalog (integration)', () => {
       const storeA = await createStore('seller3@example.com', 'tokocatalog3a');
       const storeB = await createStore('seller4@example.com', 'tokocatalog3b');
 
-      await productService.create(storeA.id, { name: 'A', slug: 'sama', price: '1000', productType: 'physical' });
-      const result = await productService.create(storeB.id, {
+      await productService.create(storeA.id, storeA.ownerId, { name: 'A', slug: 'sama', price: '1000', productType: 'physical' });
+      const result = await productService.create(storeB.id, storeB.ownerId, {
         name: 'B',
         slug: 'sama',
         price: '1000',
@@ -148,10 +152,10 @@ describe('Catalog (integration)', () => {
 
     it('auto-suffixes a derived slug on collision', async () => {
       const store = await createStore('seller5@example.com', 'tokocatalog5');
-      await productService.create(store.id, { name: 'Kaos Polos', price: '1000', productType: 'physical' });
+      await productService.create(store.id, store.ownerId, { name: 'Kaos Polos', price: '1000', productType: 'physical' });
 
       const second = (
-        await productService.create(store.id, { name: 'Kaos Polos', price: '1000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Kaos Polos', price: '1000', productType: 'physical' })
       ).unwrap();
 
       expect(second.slug.value).toBe('kaos-polos-2');
@@ -163,7 +167,7 @@ describe('Catalog (integration)', () => {
       const storeA = await createStore('seller6@example.com', 'tokocatalog6a');
       const storeB = await createStore('seller7@example.com', 'tokocatalog6b');
       const product = (
-        await productService.create(storeA.id, { name: 'Punya A', price: '1000', productType: 'physical' })
+        await productService.create(storeA.id, storeA.ownerId, { name: 'Punya A', price: '1000', productType: 'physical' })
       ).unwrap();
 
       const result = await productService.getById(storeB.id, product.id);
@@ -177,10 +181,10 @@ describe('Catalog (integration)', () => {
     it('rejects publishing a digital product with no files', async () => {
       const store = await createStore('seller8@example.com', 'tokocatalog8');
       const product = (
-        await productService.create(store.id, { name: 'Ebook', price: '10000', productType: 'digital' })
+        await productService.create(store.id, store.ownerId, { name: 'Ebook', price: '10000', productType: 'digital' })
       ).unwrap();
 
-      const result = await productService.publish(store.id, product.id);
+      const result = await productService.publish(store.id, store.ownerId, product.id);
 
       expect(result.isErr()).toBe(true);
       expect(result.unwrapErr().code).toBe('CATALOG.DIGITAL_FILE_REQUIRED');
@@ -189,7 +193,7 @@ describe('Catalog (integration)', () => {
     it('publishes once a digital file is attached', async () => {
       const store = await createStore('seller9@example.com', 'tokocatalog9');
       const product = (
-        await productService.create(store.id, { name: 'Ebook', price: '10000', productType: 'digital' })
+        await productService.create(store.id, store.ownerId, { name: 'Ebook', price: '10000', productType: 'digital' })
       ).unwrap();
       await digitalFileService.upload(store.id, product.id, {
         buffer: Buffer.from('fake ebook'),
@@ -197,7 +201,7 @@ describe('Catalog (integration)', () => {
         originalname: 'ebook.pdf',
       });
 
-      const result = await productService.publish(store.id, product.id);
+      const result = await productService.publish(store.id, store.ownerId, product.id);
 
       expect(result.isOk()).toBe(true);
       expect(result.unwrap().status.isActive()).toBe(true);
@@ -207,10 +211,10 @@ describe('Catalog (integration)', () => {
   it('archives a product', async () => {
     const store = await createStore('seller10@example.com', 'tokocatalog10');
     const product = (
-      await productService.create(store.id, { name: 'Produk', price: '10000', productType: 'physical' })
+      await productService.create(store.id, store.ownerId, { name: 'Produk', price: '10000', productType: 'physical' })
     ).unwrap();
 
-    const result = await productService.archive(store.id, product.id);
+    const result = await productService.archive(store.id, store.ownerId, product.id);
 
     expect(result.isOk()).toBe(true);
     const row = await prisma.product.findUnique({ where: { id: product.id } });
@@ -221,7 +225,7 @@ describe('Catalog (integration)', () => {
     it('writes the file to disk, records it in the images jsonb, and removes it on delete', async () => {
       const store = await createStore('seller11@example.com', 'tokocatalog11');
       const product = (
-        await productService.create(store.id, { name: 'Produk Gambar', price: '10000', productType: 'physical' })
+        await productService.create(store.id, store.ownerId, { name: 'Produk Gambar', price: '10000', productType: 'physical' })
       ).unwrap();
 
       const uploadResult = await productMediaService.uploadImage(store.id, product.id, {
@@ -255,7 +259,7 @@ describe('Catalog (integration)', () => {
     it('stores a private file_path, never a URL, in the database', async () => {
       const store = await createStore('seller12@example.com', 'tokocatalog12');
       const product = (
-        await productService.create(store.id, { name: 'Ebook', price: '10000', productType: 'digital' })
+        await productService.create(store.id, store.ownerId, { name: 'Ebook', price: '10000', productType: 'digital' })
       ).unwrap();
 
       const result = await digitalFileService.upload(store.id, product.id, {
@@ -273,7 +277,7 @@ describe('Catalog (integration)', () => {
     it('rejects removing the last file from an active digital product', async () => {
       const store = await createStore('seller13@example.com', 'tokocatalog13');
       const product = (
-        await productService.create(store.id, { name: 'Ebook', price: '10000', productType: 'digital' })
+        await productService.create(store.id, store.ownerId, { name: 'Ebook', price: '10000', productType: 'digital' })
       ).unwrap();
       const file = (
         await digitalFileService.upload(store.id, product.id, {
@@ -282,7 +286,7 @@ describe('Catalog (integration)', () => {
           originalname: 'ebook.pdf',
         })
       ).unwrap();
-      await productService.publish(store.id, product.id);
+      await productService.publish(store.id, store.ownerId, product.id);
 
       const result = await digitalFileService.remove(store.id, product.id, file.id);
 
@@ -295,7 +299,7 @@ describe('Catalog (integration)', () => {
     it('paginates listByStore with an offset window', async () => {
       const store = await createStore('seller14@example.com', 'tokocatalog14');
       for (let i = 0; i < 5; i += 1) {
-        await productService.create(store.id, { name: `Produk ${i}`, price: '1000', productType: 'physical' });
+        await productService.create(store.id, store.ownerId, { name: `Produk ${i}`, price: '1000', productType: 'physical' });
       }
 
       const page1 = await productService.list(store.id, { page: 1, limit: 2 });
@@ -311,7 +315,7 @@ describe('Catalog (integration)', () => {
   describe('foreign key behavior', () => {
     it('rejects deleting a store while a product exists (RESTRICT)', async () => {
       const store = await createStore('seller15@example.com', 'tokocatalog15');
-      await productService.create(store.id, { name: 'Produk', price: '1000', productType: 'physical' });
+      await productService.create(store.id, store.ownerId, { name: 'Produk', price: '1000', productType: 'physical' });
 
       await expect(prisma.store.delete({ where: { id: store.id } })).rejects.toThrow();
     });
@@ -319,7 +323,7 @@ describe('Catalog (integration)', () => {
     it('cascades digital_files when a product is deleted', async () => {
       const store = await createStore('seller16@example.com', 'tokocatalog16');
       const product = (
-        await productService.create(store.id, { name: 'Ebook', price: '1000', productType: 'digital' })
+        await productService.create(store.id, store.ownerId, { name: 'Ebook', price: '1000', productType: 'digital' })
       ).unwrap();
       await digitalFileService.upload(store.id, product.id, {
         buffer: Buffer.from('fake ebook'),

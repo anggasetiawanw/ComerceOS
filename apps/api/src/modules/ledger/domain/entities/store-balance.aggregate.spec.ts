@@ -1,6 +1,6 @@
 import { StoreBalance } from './store-balance.aggregate';
 import { Money } from '../../../../shared/kernel/value-objects/money.vo';
-import { InsufficientHoldingBalanceError } from '../errors/ledger.errors';
+import { InsufficientAvailableBalanceError, InsufficientHoldingBalanceError } from '../errors/ledger.errors';
 
 const money = (amount: number): Money => Money.fromRupiah(amount).unwrap();
 
@@ -71,5 +71,52 @@ describe('StoreBalance', () => {
   it('the aggregate id equals the store id', () => {
     const balance = freshBalance();
     expect(balance.id).toBe('store-1');
+  });
+
+  describe('debitForWithdrawal', () => {
+    it('debits available and appends a withdrawal_paid entry snapshotting both balances', () => {
+      const balance = freshBalance();
+      balance.creditHolding({ orderId: 'order-1', amount: money(95_000) });
+      balance.releaseToAvailable({ orderId: 'order-1', amount: money(95_000) });
+      balance.pullPendingEntries();
+
+      const result = balance.debitForWithdrawal({ withdrawalId: 'wd-1', amount: money(95_000) });
+
+      expect(result.isOk()).toBe(true);
+      expect(balance.available.amount).toBe(0n);
+      expect(balance.holding.amount).toBe(0n);
+
+      const entries = balance.pullPendingEntries();
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.type.value).toBe('withdrawal_paid');
+      expect(entries[0]!.withdrawalId).toBe('wd-1');
+      expect(entries[0]!.snapshot.available.amount).toBe(0n);
+    });
+
+    it('rejects debiting more than the current available balance, mutating nothing', () => {
+      const balance = freshBalance();
+      balance.creditHolding({ orderId: 'order-1', amount: money(50_000) });
+      balance.releaseToAvailable({ orderId: 'order-1', amount: money(50_000) });
+      balance.pullPendingEntries();
+
+      const result = balance.debitForWithdrawal({ withdrawalId: 'wd-1', amount: money(60_000) });
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr()).toBeInstanceOf(InsufficientAvailableBalanceError);
+      expect(balance.available.amount).toBe(50_000n);
+      expect(balance.pullPendingEntries()).toHaveLength(0);
+    });
+
+    it('never touches the holding balance', () => {
+      const balance = freshBalance();
+      balance.creditHolding({ orderId: 'order-1', amount: money(30_000) });
+      balance.releaseToAvailable({ orderId: 'order-1', amount: money(20_000) });
+      balance.pullPendingEntries();
+
+      balance.debitForWithdrawal({ withdrawalId: 'wd-1', amount: money(20_000) });
+
+      expect(balance.holding.amount).toBe(10_000n);
+      expect(balance.available.amount).toBe(0n);
+    });
   });
 });

@@ -54,3 +54,15 @@ export interface UpsertStoreBuyerJob {
 export interface SendEmailJob {
   deliveryId: string;
 }
+
+// Outbox-routed from all three ledger.withdrawal_* events onto one job name
+// — the `template` field (set in each event's toPayload()) is how
+// NotificationQueueProcessor/WithdrawalNotificationService tell them apart,
+// since the relay forwards payload verbatim with no per-route transform.
+export interface DispatchWithdrawalNotificationJob {
+  withdrawalId: string;
+  storeId: string;
+  amount: string;
+  template: 'withdrawal_requested' | 'withdrawal_paid' | 'withdrawal_rejected';
+  reason?: string | null;
+}

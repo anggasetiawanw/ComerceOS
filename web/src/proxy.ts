@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/akun'];
+const PROTECTED_PREFIXES = ['/dashboard', '/akun', '/admin'];
 const SESSION_HINT_COOKIE = 'has_session';
 
 /**
@@ -25,5 +25,5 @@ export const proxy = (request: NextRequest) => {
 };
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/akun/:path*'],
+  matcher: ['/dashboard/:path*', '/akun/:path*', '/admin/:path*'],
 };

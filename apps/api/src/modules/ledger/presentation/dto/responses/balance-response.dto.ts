@@ -20,12 +20,14 @@ export class PendingReleaseResponseDto {
 export class BalanceResponseDto {
   holding!: string;
   available!: string;
+  withdrawable!: string;
   pendingReleases!: PendingReleaseResponseDto[];
 
   static fromSummary(summary: BalanceSummary): BalanceResponseDto {
     const dto = new BalanceResponseDto();
     dto.holding = summary.holding;
     dto.available = summary.available;
+    dto.withdrawable = summary.withdrawable;
     dto.pendingReleases = summary.pendingReleases.map((row) => PendingReleaseResponseDto.fromRow(row));
     return dto;
   }

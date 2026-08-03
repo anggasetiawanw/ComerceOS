@@ -7,7 +7,7 @@ import { BalanceSnapshot } from '../value-objects/balance-snapshot.vo';
 import { BalanceTransactionType } from '../value-objects/balance-transaction-type.vo';
 import { BalanceCreditedEvent } from '../events/balance-credited.event';
 import { BalanceReleasedEvent } from '../events/balance-released.event';
-import { InsufficientHoldingBalanceError } from '../errors/ledger.errors';
+import { InsufficientAvailableBalanceError, InsufficientHoldingBalanceError } from '../errors/ledger.errors';
 
 export interface StoreBalanceProps {
   storeId: string;
@@ -85,6 +85,29 @@ export class StoreBalance extends AggregateRoot<StoreBalanceProps> {
     });
     this.pendingEntries.push(entry);
     this.addDomainEvent(new BalanceReleasedEvent(this.props.storeId, params.orderId, params.amount.toString()));
+    return Result.ok(entry);
+  }
+
+  // Available.subtract(amount).isErr() IS the insufficient-available
+  // invariant (Money cannot be negative by design) — same pattern as
+  // releaseToAvailable's holding subtraction (.docs/09 §7's mark-paid debit).
+  debitForWithdrawal(params: { withdrawalId: string; amount: Money }): Result<BalanceTransaction, InsufficientAvailableBalanceError> {
+    const availableResult = this.props.available.subtract(params.amount);
+    if (availableResult.isErr()) {
+      return Result.err(new InsufficientAvailableBalanceError());
+    }
+
+    const newAvailable = availableResult.unwrap();
+    this.props.available = newAvailable;
+
+    const entry = BalanceTransaction.record({
+      storeId: this.props.storeId,
+      withdrawalId: params.withdrawalId,
+      type: BalanceTransactionType.withdrawalPaid(),
+      amount: params.amount,
+      snapshot: BalanceSnapshot.of(this.props.holding, newAvailable),
+    });
+    this.pendingEntries.push(entry);
     return Result.ok(entry);
   }
 

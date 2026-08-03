@@ -25,6 +25,7 @@ import { LedgerModule } from './modules/ledger/ledger.module';
 import { InvoicingModule } from './modules/invoicing/invoicing.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AdministrationModule } from './modules/administration/administration.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     InvoicingModule,
     CrmModule,
     NotificationsModule,
+    AdministrationModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

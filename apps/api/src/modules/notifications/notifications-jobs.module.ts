@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { NotificationsModule } from './notifications.module';
-import { SendEmailProcessor } from './infrastructure/jobs/send-email.processor';
+import { LedgerModule } from '../ledger/ledger.module';
+import { NotificationQueueProcessor } from './infrastructure/jobs/notification-queue.processor';
 
 @Module({
-  imports: [NotificationsModule],
-  providers: [SendEmailProcessor],
+  imports: [NotificationsModule, LedgerModule],
+  providers: [NotificationQueueProcessor],
 })
 export class NotificationsJobsModule {}

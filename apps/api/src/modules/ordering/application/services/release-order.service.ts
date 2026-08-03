@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Result } from '../../../../shared/kernel/result';
 import { TransactionManager } from '../../../../shared/infrastructure/prisma/transaction.manager';
 import { OutboxService } from '../../../../shared/infrastructure/outbox/outbox.service';
+import { AUDIT_LOG_PORT, AuditLogPort } from '../../../administration/application/ports/audit-log.port';
 import { Order } from '../../domain/entities/order.aggregate';
 import { ORDER_REPOSITORY, OrderRepository } from '../../domain/repositories/order.repository';
 import { StatusChangeActor } from '../../domain/value-objects/status-change-actor.vo';
@@ -21,6 +22,7 @@ export class ReleaseOrderService {
 
   constructor(
     @Inject(ORDER_REPOSITORY) private readonly orders: OrderRepository,
+    @Inject(AUDIT_LOG_PORT) private readonly auditLog: AuditLogPort,
     private readonly transactionManager: TransactionManager,
     private readonly outbox: OutboxService,
   ) {}
@@ -45,6 +47,21 @@ export class ReleaseOrderService {
 
       await this.orders.save(order);
       await this.outbox.enqueueAll(order.pullDomainEvents());
+
+      // Only the seller's own manual click is audited here — a system
+      // release (the release-holding-balance scheduler) is already fully
+      // explained by the order's own status history, and auditing every
+      // scheduled release would flood the audit log with routine activity.
+      if (actor.type === 'seller') {
+        await this.auditLog.record({
+          actorType: 'user',
+          actorId: actor.id,
+          action: 'order.released',
+          entityType: 'order',
+          entityId: order.id,
+        });
+      }
+
       return Result.ok(order);
     });
   }

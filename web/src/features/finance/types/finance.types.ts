@@ -8,6 +8,7 @@ export interface PendingRelease {
 export interface BalanceSummary {
   holding: string;
   available: string;
+  withdrawable: string;
   pendingReleases: PendingRelease[];
 }
 

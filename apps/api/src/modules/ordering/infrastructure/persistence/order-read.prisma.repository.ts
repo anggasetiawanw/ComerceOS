@@ -83,4 +83,9 @@ export class OrderReadPrismaRepository implements OrderReadRepository {
       total,
     };
   }
+
+  async existsDisputedForStore(storeId: string): Promise<boolean> {
+    const count = await this.prisma.order.count({ where: { storeId, status: 'disputed' } });
+    return count > 0;
+  }
 }

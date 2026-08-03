@@ -81,6 +81,17 @@ export const envSchema = z.object({
   // which is what keeps invoicing.int-spec.ts and local dev free of a
   // Chromium dependency. docker/Dockerfile.worker sets a real path.
   PUPPETEER_EXECUTABLE_PATH: z.string().optional().default(''),
+
+  // Sprint 7 — Payouts & admin. WITHDRAWAL_MIN_AMOUNT matches .docs/09
+  // §7's "below this, transfer fees dominate" (Rp50.000). ADMIN_ALERT_EMAIL
+  // blank skips the withdrawal-requested admin notification — same
+  // blank-config-selects-null-adapter pattern as the rest of the app. The
+  // admin route throttle (600/min, .docs/05 §17) is a literal @Throttle()
+  // constant in the controllers, matching every other route-specific
+  // throttle in the app (checkout/auth/storefront) — not env-configurable,
+  // since @Throttle() decorators evaluate before DI can inject config.
+  WITHDRAWAL_MIN_AMOUNT: z.coerce.number().int().positive().default(50_000),
+  ADMIN_ALERT_EMAIL: z.string().optional().default(''),
 });
 
 export type Env = z.infer<typeof envSchema>;

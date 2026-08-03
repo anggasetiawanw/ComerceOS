@@ -28,7 +28,7 @@ const attachmentRefFrom = (payload: Record<string, unknown>): AttachmentRef | nu
 };
 
 // The logic behind the send-email job, separated from the BullMQ glue
-// (SendEmailProcessor) so it's callable directly — from a test, or from any
+// (NotificationQueueProcessor) so it's callable directly — from a test, or from any
 // future non-queue caller — without needing to construct a bullmq Job.
 @Injectable()
 export class SendEmailService {

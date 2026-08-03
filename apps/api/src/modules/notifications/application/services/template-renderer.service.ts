@@ -3,6 +3,15 @@ import { RenderedMessage } from '../ports/notification-channel.port';
 import { NOTIFICATION_TEMPLATES } from '../../domain/value-objects/notification-templates';
 import { isInvoiceReadyPayload, renderInvoiceReady } from '../../infrastructure/templates/invoice-ready.template';
 import { isOrderReleasedPayload, renderOrderReleased } from '../../infrastructure/templates/order-released.template';
+import {
+  isWithdrawalRequestedPayload,
+  renderWithdrawalRequested,
+} from '../../infrastructure/templates/withdrawal-requested.template';
+import { isWithdrawalPaidPayload, renderWithdrawalPaid } from '../../infrastructure/templates/withdrawal-paid.template';
+import {
+  isWithdrawalRejectedPayload,
+  renderWithdrawalRejected,
+} from '../../infrastructure/templates/withdrawal-rejected.template';
 
 export class UnknownNotificationTemplateError extends Error {
   constructor(template: string) {
@@ -18,6 +27,15 @@ export class TemplateRenderer {
     }
     if (template === NOTIFICATION_TEMPLATES.ORDER_RELEASED && isOrderReleasedPayload(payload)) {
       return renderOrderReleased(payload);
+    }
+    if (template === NOTIFICATION_TEMPLATES.WITHDRAWAL_REQUESTED && isWithdrawalRequestedPayload(payload)) {
+      return renderWithdrawalRequested(payload);
+    }
+    if (template === NOTIFICATION_TEMPLATES.WITHDRAWAL_PAID && isWithdrawalPaidPayload(payload)) {
+      return renderWithdrawalPaid(payload);
+    }
+    if (template === NOTIFICATION_TEMPLATES.WITHDRAWAL_REJECTED && isWithdrawalRejectedPayload(payload)) {
+      return renderWithdrawalRejected(payload);
     }
     throw new UnknownNotificationTemplateError(template);
   }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppConfigModule } from '../../shared/config/app-config.module';
 import { AppConfigService } from '../../shared/config/app-config.service';
+import { AuditModule } from '../administration/audit.module';
 import { STORE_REPOSITORY, StoreRepository } from './domain/repositories/store.repository';
 import { UsernameAvailabilityService } from './domain/services/username-availability.service';
 import { SettlementPolicyResolver } from './domain/services/settlement-policy-resolver.service';
@@ -20,7 +21,7 @@ import { StoreSettingsController } from './presentation/http/store-settings.cont
 import { SocialLinksController } from './presentation/http/social-links.controller';
 
 @Module({
-  imports: [AppConfigModule],
+  imports: [AppConfigModule, AuditModule],
   controllers: [StoresController, StoreSettingsController, SocialLinksController],
   providers: [
     { provide: STORE_REPOSITORY, useClass: StorePrismaRepository },
