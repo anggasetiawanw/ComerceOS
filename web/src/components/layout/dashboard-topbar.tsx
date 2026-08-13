@@ -42,7 +42,7 @@ export const DashboardTopbar = () => {
         {user?.store && <PlanBadge plan={user.store.plan} />}
       </div>
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-2 rounded-md p-1 outline-none hover:bg-muted">
+        <DropdownMenuTrigger className="flex items-center gap-2 rounded-md p-2 outline-none hover:bg-muted">
           <Avatar className="size-7">
             <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.name ?? ''} />
             <AvatarFallback>

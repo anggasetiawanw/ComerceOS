@@ -52,37 +52,40 @@ export const BankAccountList = () => {
                   </span>
                   <span className="text-xs text-muted-foreground">{account.accountHolderName}</span>
                 </div>
-                {account.isDefault && <Badge variant="outline">Utama</Badge>}
-                {!account.isDefault && (
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  {account.isDefault && <Badge variant="outline">Utama</Badge>}
+                  {!account.isDefault && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={setDefault.isPending}
+                      onClick={() => setDefault.mutate(account.id)}
+                    >
+                      {setDefault.isPending && setDefault.variables === account.id ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Star className="size-3.5" />
+                      )}
+                      Jadikan utama
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    disabled={setDefault.isPending}
-                    onClick={() => setDefault.mutate(account.id)}
+                    size="icon-sm"
+                    className="max-sm:min-h-11 max-sm:min-w-11"
+                    aria-label="Hapus rekening"
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(account.id)}
                   >
-                    {setDefault.isPending && setDefault.variables === account.id ? (
+                    {remove.isPending && remove.variables === account.id ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
-                      <Star className="size-3.5" />
+                      <Trash2 className="size-3.5" />
                     )}
-                    Jadikan utama
                   </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Hapus rekening"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(account.id)}
-                >
-                  {remove.isPending && remove.variables === account.id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5" />
-                  )}
-                </Button>
+                </div>
               </li>
             ))}
           </ul>

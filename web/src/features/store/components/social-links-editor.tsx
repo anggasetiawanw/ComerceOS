@@ -66,46 +66,53 @@ export const SocialLinksEditor = () => {
             {links.map((link, index) => (
               <li
                 key={link.id}
-                className="flex items-center gap-2 rounded-md border px-3 py-2"
+                className="flex flex-col gap-2 rounded-md border px-3 py-2 sm:flex-row sm:items-center"
               >
-                <span className="w-20 shrink-0 text-sm font-medium">
-                  {PLATFORM_LABELS[link.platform] ?? link.platform}
-                </span>
-                <span className="flex-1 truncate text-sm text-muted-foreground">{link.url}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Naikkan"
-                  disabled={index === 0 || reorder.isPending}
-                  onClick={() => move(index, -1)}
-                >
-                  <ArrowUp className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Turunkan"
-                  disabled={index === links.length - 1 || reorder.isPending}
-                  onClick={() => move(index, 1)}
-                >
-                  <ArrowDown className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Hapus"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(link.id)}
-                >
-                  {remove.isPending && remove.variables === link.id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-3.5" />
-                  )}
-                </Button>
+                <div className="flex flex-1 items-center gap-2 overflow-hidden">
+                  <span className="w-20 shrink-0 text-sm font-medium">
+                    {PLATFORM_LABELS[link.platform] ?? link.platform}
+                  </span>
+                  <span className="flex-1 truncate text-sm text-muted-foreground">{link.url}</span>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="max-sm:min-h-11 max-sm:min-w-11"
+                    aria-label="Naikkan"
+                    disabled={index === 0 || reorder.isPending}
+                    onClick={() => move(index, -1)}
+                  >
+                    <ArrowUp className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="max-sm:min-h-11 max-sm:min-w-11"
+                    aria-label="Turunkan"
+                    disabled={index === links.length - 1 || reorder.isPending}
+                    onClick={() => move(index, 1)}
+                  >
+                    <ArrowDown className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="max-sm:min-h-11 max-sm:min-w-11"
+                    aria-label="Hapus"
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(link.id)}
+                  >
+                    {remove.isPending && remove.variables === link.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

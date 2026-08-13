@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { MoneyInput } from '@/components/forms/money-input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ErrorState } from '@/components/data/error-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api/client';
 import { formatRupiah } from '@/lib/money';
 import { useBalance } from '@/features/finance/hooks/use-balance';
@@ -16,8 +18,8 @@ export const WithdrawalRequestForm = () => {
   const [amount, setAmount] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const { data: balance } = useBalance();
-  const { data: bankAccounts } = useBankAccounts();
+  const { data: balance, isPending: balancePending } = useBalance();
+  const { data: bankAccounts, isPending: accountsPending, isError: accountsError, refetch: refetchAccounts } = useBankAccounts();
   const requestWithdrawal = useRequestWithdrawal();
 
   const hasDefaultAccount = bankAccounts?.some((account) => account.isDefault) ?? false;
@@ -36,9 +38,13 @@ export const WithdrawalRequestForm = () => {
     }
   };
 
+  if (accountsError) {
+    return <ErrorState onRetry={() => void refetchAccounts()} />;
+  }
+
   return (
     <div className="flex flex-col gap-3">
-      {!hasDefaultAccount && (
+      {!accountsPending && !hasDefaultAccount && (
         <Alert>
           <AlertDescription>Tambahkan rekening bank utama terlebih dahulu di bawah.</AlertDescription>
         </Alert>
@@ -57,15 +63,19 @@ export const WithdrawalRequestForm = () => {
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="withdrawal-amount">Jumlah penarikan</Label>
         <MoneyInput id="withdrawal-amount" value={amount} onChange={setAmount} placeholder="0" />
-        <p className="text-xs text-muted-foreground">
-          Minimal {formatRupiah(String(WITHDRAWAL_MIN_AMOUNT_HINT))}
-          {balance && <> — saldo yang bisa ditarik saat ini {formatRupiah(balance.withdrawable)}</>}
-        </p>
+        {balancePending ? (
+          <Skeleton className="h-4 w-48" />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Minimal {formatRupiah(String(WITHDRAWAL_MIN_AMOUNT_HINT))}
+            {balance && <> — saldo yang bisa ditarik saat ini {formatRupiah(balance.withdrawable)}</>}
+          </p>
+        )}
       </div>
 
       <Button
         type="button"
-        disabled={!isValidAmount || !hasDefaultAccount || requestWithdrawal.isPending}
+        disabled={!isValidAmount || !hasDefaultAccount || accountsPending || requestWithdrawal.isPending}
         onClick={() => void onSubmit()}
         className="self-start"
       >

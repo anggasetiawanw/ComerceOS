@@ -19,7 +19,7 @@ const KeuanganLayout = ({ children }: { children: React.ReactNode }) => {
         <h1 className="text-xl font-semibold">Keuangan</h1>
         <p className="text-sm text-muted-foreground">Saldo, penarikan, dan rekening bank toko kamu.</p>
       </div>
-      <nav className="flex gap-1 border-b">
+      <nav className="flex gap-1 overflow-x-auto border-b">
         {TABS.map((tab) => {
           const isActive = pathname === tab.href;
           return (
@@ -27,7 +27,7 @@ const KeuanganLayout = ({ children }: { children: React.ReactNode }) => {
               key={tab.href}
               href={tab.href}
               className={cn(
-                'border-b-2 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground',
+                'shrink-0 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground',
                 isActive ? 'border-foreground text-foreground' : 'border-transparent',
               )}
             >

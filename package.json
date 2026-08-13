@@ -18,7 +18,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed/base.ts",
-    "admin:grant": "tsx prisma/scripts/grant-admin.ts"
+    "prisma:seed:dev": "pnpm --filter @nagihin/api run seed:dev",
+    "admin:grant": "tsx prisma/scripts/grant-admin.ts",
+    "backup:dump": "bash scripts/backup/pg-backup.sh",
+    "backup:drill": "bash scripts/backup/restore-drill.sh"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0"

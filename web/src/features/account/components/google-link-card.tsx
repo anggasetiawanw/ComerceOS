@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api/client';
 import { authApi } from '@/features/auth/api/auth.api';
 import { authKeys } from '@/features/auth/api/auth.keys';
@@ -13,7 +14,7 @@ import { useGoogleIdToken } from '../hooks/use-google-id-token';
 
 export const GoogleLinkCard = () => {
   const queryClient = useQueryClient();
-  const { data: user } = useCurrentUser();
+  const { data: user, isPending: userPending } = useCurrentUser();
   const buttonRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,28 +59,34 @@ export const GoogleLinkCard = () => {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <div className="flex items-center justify-between rounded-md border px-3 py-2">
-          <span className="text-sm">Google</span>
-          {user?.googleLinked ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy || !user.hasPassword}
-              title={!user.hasPassword ? 'Atur kata sandi dulu sebelum memutuskan Google' : undefined}
-              onClick={handleUnlink}
-            >
-              Putuskan
-            </Button>
-          ) : (
-            <span className="text-sm text-muted-foreground">Belum terhubung</span>
-          )}
-        </div>
-        {!user?.googleLinked && configured && <div ref={buttonRef} />}
-        {!user?.googleLinked && !configured && (
-          <p className="text-sm text-muted-foreground">
-            Menghubungkan Google belum dikonfigurasi di lingkungan ini.
-          </p>
+        {userPending ? (
+          <Skeleton className="h-10 w-full" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <span className="text-sm">Google</span>
+              {user?.googleLinked ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !user.hasPassword}
+                  title={!user.hasPassword ? 'Atur kata sandi dulu sebelum memutuskan Google' : undefined}
+                  onClick={handleUnlink}
+                >
+                  Putuskan
+                </Button>
+              ) : (
+                <span className="text-sm text-muted-foreground">Belum terhubung</span>
+              )}
+            </div>
+            {!user?.googleLinked && configured && <div ref={buttonRef} />}
+            {!user?.googleLinked && !configured && (
+              <p className="text-sm text-muted-foreground">
+                Menghubungkan Google belum dikonfigurasi di lingkungan ini.
+              </p>
+            )}
+          </>
         )}
         {loadError && (
           <p className="text-sm text-destructive">Gagal memuat tombol Google, coba muat ulang halaman.</p>

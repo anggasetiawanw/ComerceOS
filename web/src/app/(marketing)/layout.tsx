@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/layout/theme-toggle';
+import { MarketingFooter } from '@/components/layout/marketing-footer';
 
 const MarketingLayout = ({ children }: { children: React.ReactNode }) => {
   return (
@@ -11,6 +12,7 @@ const MarketingLayout = ({ children }: { children: React.ReactNode }) => {
         <ThemeToggle />
       </header>
       <main className="flex flex-1 flex-col">{children}</main>
+      <MarketingFooter />
     </div>
   );
 };

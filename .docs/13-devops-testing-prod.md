@@ -357,6 +357,34 @@ code rollback never requires a schema rollback.
 - [ ] Operator runbook written
 - [ ] Reconciliation job verified against a real settlement report
 
+### Backups and restore drill
+
+**PITR itself is a Supabase/VPS-side setting the operator enables** — nothing in this repo turns it on.
+What lives here is the other half: proof that a dump can actually be restored, since PITR that has never
+been exercised is the same hypothesis as any other untested backup.
+
+`scripts/backup/pg-backup.sh` (`pnpm backup:dump`) runs `pg_dump -Fc` against `DIRECT_DATABASE_URL` into
+`backups/nagihin-<timestamp>.dump`, then sweeps old dumps down to the newest `BACKUP_KEEP` (default 14).
+It uses a local `pg_dump` if one is on `PATH`, otherwise falls through to `docker compose exec postgres
+pg_dump` — the same script runs unchanged on a Windows dev box or the Linux VPS.
+
+`scripts/backup/restore-drill.sh` (`pnpm backup:drill`) restores a dump (the newest one by default) into a
+throwaway `nagihin_drill_<timestamp>` database and asserts, via `scripts/backup/assertions.sql`:
+
+- every migration in `_prisma_migrations` applied cleanly, none rolled back or half-finished
+- every core table exists and is queryable, with row counts logged for a human to sanity-check
+- the ledger reconciles — `SUM(holding_delta)`/`SUM(available_delta)` per store from
+  `balance_transactions` matches `stores.holding_balance`/`available_balance`, the same invariant
+  `BalanceReconciler` and `ledger.int-spec.ts` assert. This is what makes the drill prove the restored
+  data is coherent, not just that `pg_restore` exited `0`
+
+The drill database is dropped on success and left in place on failure, for inspection. Both scripts read
+`DIRECT_DATABASE_URL` from `.env` and require Git Bash (or WSL) on Windows.
+
+`backups/` is gitignored — these are local artifacts, not something to commit. Run `pnpm backup:dump` on a
+schedule (cron on the VPS) and `pnpm backup:drill` periodically against whatever the latest dump is; a
+green drill is what turns "PITR confirmed" into a checked box below, not the other way around.
+
 ### Operator runbook
 
 Daily:

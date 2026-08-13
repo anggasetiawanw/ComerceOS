@@ -37,5 +37,8 @@ Thumbs.db
 # testing / coverage
 coverage/
 
+# local database dumps (scripts/backup)
+backups/
+
 # misc
 .turbo/

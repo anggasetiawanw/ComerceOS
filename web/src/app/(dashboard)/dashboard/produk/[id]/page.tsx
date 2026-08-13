@@ -1,8 +1,11 @@
 'use client';
 
 import { useParams } from 'next/navigation';
+import { PackageX } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/data/empty-state';
 import { ErrorState } from '@/components/data/error-state';
+import { ApiError } from '@/lib/api/client';
 import { useProduct } from '@/features/products/hooks/use-product';
 import { ProductForm } from '@/features/products/components/product-form';
 import { ProductImagesEditor } from '@/features/products/components/product-images-editor';
@@ -11,10 +14,16 @@ import { ProductsSkeleton } from '@/features/products/components/products-skelet
 
 const ProductEditPage = () => {
   const params = useParams<{ id: string }>();
-  const { data: product, isPending, isError, refetch } = useProduct(params.id);
+  const { data: product, isPending, isError, error, refetch } = useProduct(params.id);
 
   if (isPending) return <ProductsSkeleton />;
-  if (isError) return <ErrorState onRetry={() => refetch()} />;
+
+  if (isError) {
+    if (error instanceof ApiError && error.problem.status === 404) {
+      return <EmptyState icon={PackageX} title="Produk tidak ditemukan" description="Produk ini mungkin sudah dihapus." />;
+    }
+    return <ErrorState onRetry={() => refetch()} />;
+  }
 
   return (
     <div className="flex flex-col gap-6">

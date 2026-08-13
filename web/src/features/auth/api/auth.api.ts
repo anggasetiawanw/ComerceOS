@@ -39,6 +39,8 @@ export const authApi = {
   resetPassword: (input: { token: string; password: string }) =>
     apiClient.post<{ reset: true }>('/auth/reset-password', input, { auth: false }),
   me: () => apiClient.get<UserResponse>('/users/me'),
+  updateMe: (input: { name?: string; phone?: string }) =>
+    apiClient.patch<UserResponse>('/users/me', input),
   logout: () => apiClient.post<{ loggedOut: true }>('/auth/logout'),
   linkGoogle: (idToken: string) =>
     apiClient.post<{ linked: true }>('/auth/google/link', { idToken }),
