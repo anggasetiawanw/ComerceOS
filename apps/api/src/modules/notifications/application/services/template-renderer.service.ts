@@ -12,6 +12,7 @@ import {
   isWithdrawalRejectedPayload,
   renderWithdrawalRejected,
 } from '../../infrastructure/templates/withdrawal-rejected.template';
+import { isInquiryReceivedPayload, renderInquiryReceived } from '../../infrastructure/templates/inquiry-received.template';
 
 export class UnknownNotificationTemplateError extends Error {
   constructor(template: string) {
@@ -36,6 +37,9 @@ export class TemplateRenderer {
     }
     if (template === NOTIFICATION_TEMPLATES.WITHDRAWAL_REJECTED && isWithdrawalRejectedPayload(payload)) {
       return renderWithdrawalRejected(payload);
+    }
+    if (template === NOTIFICATION_TEMPLATES.INQUIRY_RECEIVED && isInquiryReceivedPayload(payload)) {
+      return renderInquiryReceived(payload);
     }
     throw new UnknownNotificationTemplateError(template);
   }

@@ -71,6 +71,27 @@ export class User extends AggregateRoot<UserProps> {
     return user;
   }
 
+  // Sprint 9 — Path B. A manual order needs a buyer_id, but the buyer
+  // typically has never registered. No googleId, no passwordHash, email
+  // unverified — this account is claimed later via /lupa-password, the
+  // only login path a passwordless user has (.docs/12-roadmap-sprints.md
+  // Sprint 9). Deliberately does not emit UserRegisteredEvent/
+  // UserRegisteredWithPasswordEvent — this isn't a self-service
+  // registration and nothing downstream should treat it as one.
+  static registerAsGuestBuyer(params: { email: Email; name: string; phone: string | null }): User {
+    return new User({
+      googleId: null,
+      email: params.email,
+      passwordHash: null,
+      emailVerifiedAt: null,
+      name: params.name,
+      avatarUrl: null,
+      phone: params.phone,
+      role: UserRole.buyer(),
+      createdAt: new Date(),
+    });
+  }
+
   static reconstitute(props: UserProps, id: UniqueId): User {
     return new User(props, id);
   }

@@ -7,6 +7,8 @@ import {
   ORDER_READ_REPOSITORY,
   OrderReadRepository,
   PendingReleaseListItem,
+  StoreOrderListFilter,
+  StoreOrderListItem,
 } from '../../domain/repositories/order-read.repository';
 import { OrderNotFoundError } from '../../domain/errors/ordering.errors';
 
@@ -51,5 +53,17 @@ export class OrderReadService {
 
   async hasDisputedOrder(storeId: string): Promise<boolean> {
     return this.reads.existsDisputedForStore(storeId);
+  }
+
+  async listForStore(storeId: string, filter: StoreOrderListFilter): Promise<{ items: StoreOrderListItem[]; hasMore: boolean }> {
+    return this.reads.listForStore(storeId, filter);
+  }
+
+  async getForStore(orderId: string, storeId: string): Promise<Result<Order, OrderNotFoundError>> {
+    const order = await this.orders.findById(orderId);
+    // Not-found rather than forbidden on a store mismatch — same
+    // information-hiding precedent as ReleaseOrderService.
+    if (!order || !order.belongsToStore(storeId)) return Result.err(new OrderNotFoundError());
+    return Result.ok(order);
   }
 }

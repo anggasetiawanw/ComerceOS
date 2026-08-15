@@ -81,6 +81,7 @@ export class StoresController {
     const result = await this.stores.updateProfile(user.id, {
       displayName: dto.displayName,
       bio: dto.bio,
+      whatsappNumber: dto.whatsappNumber,
     });
     return StoreResponseDto.fromDomain(unwrapOrThrow(result));
   }

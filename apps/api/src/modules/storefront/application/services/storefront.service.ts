@@ -38,12 +38,16 @@ export interface StorefrontResult {
   bannerUrl: string | null;
   theme: Record<string, string> | null;
   plan: string;
+  // The raw number is never exposed publicly — only whether the Tanya
+  // button has somewhere to go. The actual wa.me link is built server-side
+  // by CreateInquiryService at inquiry time.
+  hasWhatsapp: boolean;
   socialLinks: StorefrontSocialLink[];
   products: StorefrontProduct[];
 }
 
 export const STOREFRONT_CACHE_NAMESPACE = 'storefront';
-export const STOREFRONT_CACHE_VERSION = 'v2';
+export const STOREFRONT_CACHE_VERSION = 'v3';
 export const STOREFRONT_PRODUCT_CACHE_NAMESPACE = 'storefront-product';
 
 export const storefrontCacheKey = (username: string): string =>
@@ -93,6 +97,7 @@ export const isStorefrontResult = (value: unknown): value is StorefrontResult =>
     !('username' in value) ||
     !('displayName' in value) ||
     !('plan' in value) ||
+    !('hasWhatsapp' in value) ||
     !('socialLinks' in value) ||
     !('products' in value)
   ) {
@@ -102,7 +107,8 @@ export const isStorefrontResult = (value: unknown): value is StorefrontResult =>
     typeof value.id !== 'string' ||
     typeof value.username !== 'string' ||
     typeof value.displayName !== 'string' ||
-    typeof value.plan !== 'string'
+    typeof value.plan !== 'string' ||
+    typeof value.hasWhatsapp !== 'boolean'
   ) {
     return false;
   }
@@ -134,6 +140,7 @@ const toStorefrontResult = (row: StorefrontStoreRow): StorefrontResult => ({
   bannerUrl: row.bannerUrl,
   theme: isThemeRecord(row.theme) ? row.theme : null,
   plan: row.plan,
+  hasWhatsapp: row.whatsappNumber !== null,
   socialLinks: row.socialLinks.map((link) => ({
     id: link.id,
     platform: link.platform,

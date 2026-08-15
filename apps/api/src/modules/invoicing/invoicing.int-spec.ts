@@ -118,6 +118,7 @@ describe('Invoicing (integration)', () => {
     await prisma.orderStatusHistory.deleteMany();
     await prisma.orderItem.deleteMany();
     await prisma.order.deleteMany();
+    await prisma.inquiry.deleteMany();
     await prisma.digitalFile.deleteMany();
     await prisma.product.deleteMany();
     await prisma.socialLink.deleteMany();

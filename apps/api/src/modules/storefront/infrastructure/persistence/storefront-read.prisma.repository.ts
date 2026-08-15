@@ -65,6 +65,7 @@ export class StorefrontReadPrismaRepository implements StorefrontReadRepository 
         bannerUrl: true,
         theme: true,
         plan: true,
+        whatsappNumber: true,
         socialLinks: {
           select: { id: true, platform: true, url: true, position: true },
           orderBy: { position: 'asc' },

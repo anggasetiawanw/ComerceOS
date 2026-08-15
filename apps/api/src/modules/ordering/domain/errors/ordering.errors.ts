@@ -80,3 +80,48 @@ export class StoreNotFoundForOrderError extends DomainError {
     super('Store not found');
   }
 }
+
+export class InquiryNotFoundError extends DomainError {
+  readonly code = 'ORDERING.INQUIRY_NOT_FOUND';
+  readonly status = 404;
+
+  constructor() {
+    super('Inquiry not found');
+  }
+}
+
+export class InquiryAlreadyConvertedError extends DomainError {
+  readonly code = 'ORDERING.INQUIRY_ALREADY_CONVERTED';
+  readonly status = 409;
+
+  constructor() {
+    super('This inquiry has already been converted to an order');
+  }
+}
+
+export class InquiryAlreadyLostError extends DomainError {
+  readonly code = 'ORDERING.INQUIRY_ALREADY_LOST';
+  readonly status = 409;
+
+  constructor() {
+    super('This inquiry has already been marked lost');
+  }
+}
+
+export class ManualOrderSourceRequiredError extends DomainError {
+  readonly code = 'ORDERING.MANUAL_ORDER_SOURCE_REQUIRED';
+  readonly status = 422;
+
+  constructor() {
+    super('Payment can only be confirmed manually on a manually-created order');
+  }
+}
+
+export class ProductNotFoundForStoreError extends DomainError {
+  readonly code = 'ORDERING.PRODUCT_NOT_FOUND_FOR_STORE';
+  readonly status = 404;
+
+  constructor(productId: string) {
+    super(`Product "${productId}" does not belong to this store`);
+  }
+}

@@ -27,6 +27,7 @@ export interface OrderProps {
   storeId: string;
   buyerId: string;
   source: OrderSource;
+  inquiryId: string | null;
   status: OrderStatus;
   items: OrderItem[];
   subtotal: Money;
@@ -52,6 +53,7 @@ export class Order extends AggregateRoot<OrderProps> {
     storeId: string;
     buyerId: string;
     source: OrderSource;
+    inquiryId?: string | null;
     items: OrderItem[];
     subtotal: Money;
     discount: DiscountApplication;
@@ -68,6 +70,7 @@ export class Order extends AggregateRoot<OrderProps> {
       storeId: params.storeId,
       buyerId: params.buyerId,
       source: params.source,
+      inquiryId: params.inquiryId ?? null,
       status: OrderStatus.pendingPayment(),
       items: params.items,
       subtotal: params.subtotal,
@@ -109,6 +112,10 @@ export class Order extends AggregateRoot<OrderProps> {
 
   get source(): OrderSource {
     return this.props.source;
+  }
+
+  get inquiryId(): string | null {
+    return this.props.inquiryId;
   }
 
   get status(): OrderStatus {

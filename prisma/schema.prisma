@@ -48,6 +48,14 @@ enum OrderSource {
   manual
 }
 
+// Sprint 9 — Path B. Deliberately not an order status (.docs/06-database-roadmap.md
+// §2.1, AD-08): an inquiry has no money, no items, and often never becomes an order.
+enum InquiryStatus {
+  open
+  converted
+  lost
+}
+
 enum OrderStatus {
   pending_payment
   paid
@@ -145,6 +153,7 @@ model User {
   storeBuyerRecords   StoreBuyer[]
   auditLogs           AuditLog[]
   reviewedWithdrawals Withdrawal[]
+  inquiries           Inquiry[]
 
   @@map("users")
 }
@@ -202,6 +211,10 @@ model Store {
   customDomain     String?        @unique @map("custom_domain")
   plan             StorePlan      @default(free)
   settlementMode   SettlementMode @default(auto) @map("settlement_mode")
+  // Sprint 9 — Path B. Nullable: the WA deep link (Tanya button) and the
+  // inquiry notification recipient are both unavailable until the seller
+  // sets this. Stored normalized (628xxxxxxxxxx) via shared/kernel/value-objects/phone.vo.ts.
+  whatsappNumber   String?        @map("whatsapp_number")
   holdingBalance   BigInt         @default(0) @map("holding_balance")
   availableBalance BigInt         @default(0) @map("available_balance")
   invoiceCounter   Int            @default(0) @map("invoice_counter")
@@ -211,6 +224,7 @@ model Store {
   socialLinks         SocialLink[]
   products            Product[]
   orders              Order[]
+  inquiries           Inquiry[]
   balanceTransactions BalanceTransaction[]
   bankAccounts        BankAccount[]
   withdrawals         Withdrawal[]
@@ -256,6 +270,7 @@ model Product {
   store        Store         @relation(fields: [storeId], references: [id], onDelete: Restrict)
   digitalFiles DigitalFile[]
   orderItems   OrderItem[]
+  inquiries    Inquiry[]
 
   @@unique([storeId, slug])
   @@index([storeId, status])
@@ -298,6 +313,10 @@ model Order {
   buyerId               String      @map("buyer_id")
   source                OrderSource
   status                OrderStatus @default(pending_payment)
+  // Sprint 9 — set only when source = manual and the order was created via
+  // POST /inquiries/:id/convert. Nullable FK, added as a non-blocking ALTER
+  // TABLE ADD COLUMN (.docs/06-database-roadmap.md §1).
+  inquiryId             String?     @map("inquiry_id")
   subtotal              BigInt
   discountCode          String?     @map("discount_code")
   discountAmount        BigInt      @default(0) @map("discount_amount")
@@ -314,6 +333,8 @@ model Order {
 
   store               Store                @relation(fields: [storeId], references: [id], onDelete: Restrict)
   buyer               User                 @relation(fields: [buyerId], references: [id], onDelete: Restrict)
+  inquiry              Inquiry?             @relation("InquiryConvertedOrder", fields: [inquiryId], references: [id], onDelete: SetNull)
+  convertedFromInquiry Inquiry?             @relation("InquiryConversionSource")
   items               OrderItem[]
   statusHistory       OrderStatusHistory[]
   webhookEvents       WebhookEvent[]
@@ -325,7 +346,32 @@ model Order {
   @@index([buyerId, createdAt])
   @@index([midtransTransactionId])
   @@index([status, holdingUntil])
+  @@index([inquiryId])
   @@map("orders")
+}
+
+// Sprint 9 — Path B. The chat-first flow: a storefront visitor clicks
+// "Tanya dulu via WA", which records this row and returns a wa.me deep
+// link. No buyer contact fields (.docs/brief/database-schema.md) — the
+// seller matches an inquiry to their WA inbox by product and timing, and
+// the buyer only lands in the database for real once converted.
+model Inquiry {
+  id                String        @id
+  storeId           String        @map("store_id")
+  productId         String?       @map("product_id")
+  buyerId           String?       @map("buyer_id")
+  status            InquiryStatus @default(open)
+  convertedOrderId  String?       @unique @map("converted_order_id")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  store           Store    @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  product         Product? @relation(fields: [productId], references: [id], onDelete: Restrict)
+  buyer           User?    @relation(fields: [buyerId], references: [id], onDelete: SetNull)
+  convertedOrder  Order?   @relation("InquiryConversionSource", fields: [convertedOrderId], references: [id], onDelete: SetNull)
+  orders          Order[]  @relation("InquiryConvertedOrder")
+
+  @@index([storeId, status, createdAt])
+  @@map("inquiries")
 }
 
 // order_items snapshot product data at purchase time so a later product edit

@@ -57,6 +57,33 @@ describe('User', () => {
     });
   });
 
+  describe('registerAsGuestBuyer (Sprint 9, Path B)', () => {
+    it('has no password, no Google id, and an unverified email', () => {
+      const user = User.registerAsGuestBuyer({ email: email(), name: 'Pembeli WA', phone: '628123456789' });
+
+      expect(user.passwordHash).toBeNull();
+      expect(user.googleId).toBeNull();
+      expect(user.isEmailVerified()).toBe(false);
+      expect(user.canLoginWithPassword()).toBe(false);
+      expect(user.phone).toBe('628123456789');
+    });
+
+    it('raises no registration event — this is not a self-service signup', () => {
+      const user = User.registerAsGuestBuyer({ email: email(), name: 'Pembeli WA', phone: null });
+      expect(user.pullDomainEvents()).toHaveLength(0);
+    });
+
+    it('can set a password from a zero-method starting state, letting the guest claim the account', async () => {
+      const user = User.registerAsGuestBuyer({ email: email(), name: 'Pembeli WA', phone: null });
+      const passwordHash = (await PasswordHash.fromPlainText('correct-horse-battery')).unwrap();
+
+      const result = user.setPasswordHash(passwordHash);
+
+      expect(result.isOk()).toBe(true);
+      expect(user.passwordHash).not.toBeNull();
+    });
+  });
+
   describe('verifyPassword', () => {
     it('matches the correct plaintext and rejects the wrong one', async () => {
       const user = await registerWithPassword();

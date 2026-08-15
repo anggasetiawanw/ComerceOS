@@ -21,10 +21,27 @@ export class JwtAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractToken(request);
+
+    if (isPublic) {
+      // Best-effort: a public route never requires a token, but a logged-in
+      // visitor's token — when one happens to be present — still populates
+      // request.user, so e.g. an inquiry can record a real buyerId without
+      // trusting a client-supplied one. A missing or invalid token is not an
+      // error here; it just leaves the route anonymous.
+      if (token) {
+        try {
+          const claims = await this.jwt.verifyAccessToken(token);
+          request.user = { id: claims.sub, email: claims.email, role: claims.role, storeId: claims.storeId };
+        } catch {
+          // swallow — anonymous access is still valid on a public route
+        }
+      }
+      return true;
+    }
+
     if (!token) {
       throw new UnauthorizedException('Missing bearer token');
     }

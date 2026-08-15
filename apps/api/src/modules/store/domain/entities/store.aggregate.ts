@@ -3,6 +3,7 @@ import { Result } from '../../../../shared/kernel/result';
 import { UniqueId } from '../../../../shared/kernel/uuid';
 import { Money } from '../../../../shared/kernel/value-objects/money.vo';
 import { Username } from '../../../../shared/kernel/value-objects/username.vo';
+import { Phone } from '../../../../shared/kernel/value-objects/phone.vo';
 import { StoreProfile } from '../value-objects/store-profile.vo';
 import { StoreTheme } from '../value-objects/store-theme.vo';
 import { StorePlan } from '../value-objects/store-plan.vo';
@@ -31,6 +32,7 @@ export interface StoreProps {
   customDomain: string | null;
   plan: StorePlan;
   settlementMode: SettlementMode;
+  whatsappNumber: Phone | null;
   holdingBalance: Money;
   availableBalance: Money;
   invoiceCounter: number;
@@ -52,6 +54,7 @@ export class Store extends AggregateRoot<StoreProps> {
       customDomain: null,
       plan: StorePlan.free(),
       settlementMode: SettlementMode.auto(),
+      whatsappNumber: null,
       holdingBalance: Money.zero(),
       availableBalance: Money.zero(),
       invoiceCounter: 0,
@@ -96,6 +99,10 @@ export class Store extends AggregateRoot<StoreProps> {
     return this.props.settlementMode;
   }
 
+  get whatsappNumber(): Phone | null {
+    return this.props.whatsappNumber;
+  }
+
   get holdingBalance(): Money {
     return this.props.holdingBalance;
   }
@@ -132,6 +139,12 @@ export class Store extends AggregateRoot<StoreProps> {
     if (mode.value === this.props.settlementMode.value) return;
     this.props.settlementMode = mode;
     this.addDomainEvent(new SettlementModeChangedEvent(this.id, mode.value));
+  }
+
+  changeWhatsappNumber(phone: Phone | null): void {
+    if (phone?.value === this.props.whatsappNumber?.value) return;
+    this.props.whatsappNumber = phone;
+    this.addDomainEvent(new StoreProfileUpdatedEvent(this.id, this.props.username.value));
   }
 
   changePlan(plan: StorePlan): void {

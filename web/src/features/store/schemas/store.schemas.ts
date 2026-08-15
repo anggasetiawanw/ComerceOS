@@ -17,6 +17,11 @@ export type CreateStoreInput = z.infer<typeof createStoreSchema>;
 export const storeProfileSchema = z.object({
   displayName: z.string().min(1, 'Nama toko wajib diisi').max(100, 'Maksimal 100 karakter'),
   bio: z.string().max(500, 'Maksimal 500 karakter').optional().nullable(),
+  whatsappNumber: z
+    .string()
+    .max(20, 'Maksimal 20 karakter')
+    .refine((value) => value === '' || /^(\+?62|0)\d{8,13}$/.test(value), 'Format nomor tidak valid, contoh: 08123456789')
+    .optional(),
 });
 export type StoreProfileInput = z.infer<typeof storeProfileSchema>;
 

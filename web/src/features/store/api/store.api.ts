@@ -9,7 +9,7 @@ export const storeApi = {
     apiClient.get<UsernameAvailability>(
       `/stores/username-available?username=${encodeURIComponent(username)}`,
     ),
-  updateProfile: (input: { displayName?: string; bio?: string | null }) =>
+  updateProfile: (input: { displayName?: string; bio?: string | null; whatsappNumber?: string | null }) =>
     apiClient.patch<Store>('/stores/me', input),
   changeUsername: (username: string) =>
     apiClient.patch<Store>('/stores/me/username', { username }),

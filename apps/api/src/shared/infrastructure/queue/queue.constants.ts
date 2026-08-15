@@ -24,6 +24,7 @@ export const JOB_NAMES = {
   UPSERT_STORE_BUYER: 'upsert-store-buyer',
   SEND_EMAIL: 'send-email',
   DISPATCH_WITHDRAWAL_NOTIFICATION: 'dispatch-withdrawal-notification',
+  DISPATCH_INQUIRY_NOTIFICATION: 'dispatch-inquiry-notification',
 } as const;
 
 export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

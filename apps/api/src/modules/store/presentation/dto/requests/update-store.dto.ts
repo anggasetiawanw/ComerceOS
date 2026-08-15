@@ -11,4 +11,9 @@ export class UpdateStoreDto {
   @IsString()
   @MaxLength(500)
   bio?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  whatsappNumber?: string | null;
 }

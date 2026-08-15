@@ -27,6 +27,7 @@ export const storefrontSchema = z.object({
   bannerUrl: z.string().nullable(),
   theme: z.record(z.string(), z.string()).nullable(),
   plan: z.string(),
+  hasWhatsapp: z.boolean(),
   socialLinks: z.array(storefrontSocialLinkSchema),
   products: z.array(storefrontProductSchema),
 });

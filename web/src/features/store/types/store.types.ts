@@ -15,6 +15,7 @@ export interface Store {
   theme: Record<string, string> | null;
   plan: string;
   settlementMode: string;
+  whatsappNumber: string | null;
   createdAt: string;
 }
 

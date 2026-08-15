@@ -9,6 +9,7 @@ import { StorageModule } from '../../shared/infrastructure/storage/storage.modul
 import { AppJwtModule } from '../../shared/security/jwt.module';
 import { IdentityModule } from './identity.module';
 import { AuthService } from './application/services/auth.service';
+import { BuyerDirectoryService } from './application/services/buyer-directory.service';
 import {
   GOOGLE_OAUTH_CLIENT,
   GoogleOAuthClient,
@@ -51,6 +52,7 @@ describe('Identity (integration)', () => {
   let moduleRef: TestingModule;
   let prisma: PrismaService;
   let auth: AuthService;
+  let buyerDirectory: BuyerDirectoryService;
   let googleClient: FakeGoogleOAuthClient;
   let emailSender: FakeEmailSender;
 
@@ -77,6 +79,7 @@ describe('Identity (integration)', () => {
 
     prisma = moduleRef.get(PrismaService);
     auth = moduleRef.get(AuthService);
+    buyerDirectory = moduleRef.get(BuyerDirectoryService);
   });
 
   beforeEach(async () => {
@@ -93,6 +96,7 @@ describe('Identity (integration)', () => {
     await prisma.orderStatusHistory.deleteMany();
     await prisma.orderItem.deleteMany();
     await prisma.order.deleteMany();
+    await prisma.inquiry.deleteMany();
     await prisma.digitalFile.deleteMany();
     await prisma.product.deleteMany();
     await prisma.socialLink.deleteMany();
@@ -185,6 +189,38 @@ describe('Identity (integration)', () => {
         password: 'a-brand-new-password',
       });
       expect(loginWithNewPassword.isOk()).toBe(true);
+    });
+
+    it('a Sprint 9 guest buyer (no password, no Google id) can claim their account via reset', async () => {
+      const guest = await buyerDirectory.findOrCreateByEmail({
+        email: 'guest@example.com',
+        name: 'Pembeli WA',
+        phone: null,
+      });
+
+      await auth.requestPasswordReset(guest.email);
+      expect(emailSender.lastResetToken).not.toBeNull();
+
+      const resetResult = await auth.resetPassword(emailSender.lastResetToken as string, 'a-brand-new-password');
+      expect(resetResult.isOk()).toBe(true);
+
+      const loginResult = await auth.login({ email: guest.email, password: 'a-brand-new-password' });
+      expect(loginResult.isOk()).toBe(true);
+    });
+
+    it('does not issue a reset token for a Google-only user with no password', async () => {
+      googleClient.nextProfile = {
+        googleId: 'google-guest-1',
+        email: 'google-only@example.com',
+        emailVerified: true,
+        name: 'Google Buyer',
+        avatarUrl: null,
+      };
+      await auth.loginWithGoogleIdToken({ idToken: 'whatever' });
+
+      emailSender.lastResetToken = null;
+      await auth.requestPasswordReset('google-only@example.com');
+      expect(emailSender.lastResetToken).toBeNull();
     });
   });
 

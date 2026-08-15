@@ -4,4 +4,5 @@ export const NOTIFICATION_TEMPLATES = {
   WITHDRAWAL_REQUESTED: 'withdrawal_requested',
   WITHDRAWAL_PAID: 'withdrawal_paid',
   WITHDRAWAL_REJECTED: 'withdrawal_rejected',
+  INQUIRY_RECEIVED: 'inquiry_received',
 } as const;

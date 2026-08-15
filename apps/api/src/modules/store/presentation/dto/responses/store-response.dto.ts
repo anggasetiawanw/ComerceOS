@@ -10,6 +10,7 @@ export class StoreResponseDto {
   theme!: Record<string, string> | null;
   plan!: string;
   settlementMode!: string;
+  whatsappNumber!: string | null;
   createdAt!: Date;
 
   static fromDomain(store: Store): StoreResponseDto {
@@ -23,6 +24,7 @@ export class StoreResponseDto {
     dto.theme = store.theme.value;
     dto.plan = store.plan.value;
     dto.settlementMode = store.settlementMode.value;
+    dto.whatsappNumber = store.whatsappNumber?.toLocalFormat() ?? null;
     dto.createdAt = store.createdAt;
     return dto;
   }

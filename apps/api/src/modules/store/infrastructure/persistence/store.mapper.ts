@@ -1,6 +1,7 @@
 import { Prisma, SocialLink as PrismaSocialLink, Store as PrismaStore } from '@prisma/client';
 import { Store } from '../../domain/entities/store.aggregate';
 import { Username } from '../../../../shared/kernel/value-objects/username.vo';
+import { Phone } from '../../../../shared/kernel/value-objects/phone.vo';
 import { Money } from '../../../../shared/kernel/value-objects/money.vo';
 import { StoreProfile } from '../../domain/value-objects/store-profile.vo';
 import { StoreTheme } from '../../domain/value-objects/store-theme.vo';
@@ -42,6 +43,15 @@ export class StoreMapper {
       throw new Error(`Corrupt store row: invalid settlement mode "${row.settlementMode}"`);
     }
 
+    let whatsappNumber: Phone | null = null;
+    if (row.whatsappNumber !== null) {
+      const phoneResult = Phone.create(row.whatsappNumber);
+      if (phoneResult.isErr()) {
+        throw new Error(`Corrupt store row: invalid whatsapp number for store "${row.id}"`);
+      }
+      whatsappNumber = phoneResult.unwrap();
+    }
+
     const holdingBalanceResult = Money.fromRupiah(row.holdingBalance);
     if (holdingBalanceResult.isErr()) {
       throw new Error(`Corrupt store row: invalid holding balance for store "${row.id}"`);
@@ -66,6 +76,7 @@ export class StoreMapper {
         customDomain: row.customDomain,
         plan: planResult.unwrap(),
         settlementMode: modeResult.unwrap(),
+        whatsappNumber,
         holdingBalance: holdingBalanceResult.unwrap(),
         availableBalance: availableBalanceResult.unwrap(),
         invoiceCounter: row.invoiceCounter,
@@ -90,6 +101,7 @@ export class StoreMapper {
       customDomain: store.customDomain,
       plan: store.plan.value,
       settlementMode: store.settlementMode.value,
+      whatsappNumber: store.whatsappNumber?.value ?? null,
       holdingBalance: store.holdingBalance.amount,
       availableBalance: store.availableBalance.amount,
       invoiceCounter: store.invoiceCounter,
@@ -108,6 +120,7 @@ export class StoreMapper {
       theme: theme === null ? Prisma.JsonNull : { ...theme },
       plan: store.plan.value,
       settlementMode: store.settlementMode.value,
+      whatsappNumber: store.whatsappNumber?.value ?? null,
     };
   }
 }

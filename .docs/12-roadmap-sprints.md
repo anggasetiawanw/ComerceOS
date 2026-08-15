@@ -931,15 +931,154 @@ Decisions and drift from the docs, recorded here rather than silently:
 ---
 
 ### Sprint 9 — Path B
-- [ ] Migration 013: `inquiries` + `orders.inquiry_id`
-- [ ] `Inquiry` aggregate, creation from the storefront, WA deep link with pre-filled message
-- [ ] Manual order creation with price override and buyer-by-email
-- [ ] Manual payment confirmation
-- [ ] Inquiry → order conversion, mark lost
-- [ ] WhatsApp channel implementation (Fonnte/Wablas) behind the port
-- [ ] Frontend: `/dashboard/pesanan/manual`, `/dashboard/pesanan/pertanyaan`, live Tanya button
+- [x] Migration 013: `inquiries` + `orders.inquiry_id` — plus `stores.whatsapp_number` and a users-table constraint
+  amendment, see drift below
+- [x] `Inquiry` aggregate, creation from the storefront, WA deep link with pre-filled message
+- [x] Manual order creation with price override and buyer-by-email
+- [x] Manual payment confirmation
+- [x] Inquiry → order conversion, mark lost
+- [ ] WhatsApp channel implementation (Fonnte/Wablas) behind the port — deep link only this sprint, no
+  provider account exists yet; see drift below
+- [x] Frontend: `/dashboard/pesanan/manual`, `/dashboard/pesanan/pertanyaan`, live Tanya button — plus the
+  full P0 `/dashboard/pesanan` list + detail the checklist above doesn't mention but `.docs/05-api-roadmap.md`
+  §6.2 and `.docs/11-frontend.md` §2 both specify, since Path B's own manual-payment-confirmation action needs
+  a surface to click and the sidebar item had been `disabled: true` since Sprint 5
 
 **Deliverable:** the chat-first flow works end to end and lands buyers in the database.
+
+**Status: done.** Verified live 2026-08-15 against real Postgres + Redis — 64 API unit suites (1,060 tests,
+including the full `Inquiry` aggregate guard matrix, `Phone` VO normalization/round-trip, `OrderFactory
+.fromManualCreation`'s price-override and empty-basket cases, and `User.registerAsGuestBuyer`'s zero-login-
+method invariants) pass, plus 12/14 integration suites run for real: the new `inquiries.int-spec.ts` (7/7 —
+anonymous inquiry creation with no waLink until the store has a WhatsApp number, a wa.me link with a correct
+prefilled message once it does, dedup returns the same inquiry id on a repeat call, a logged-in visitor's
+inquiry carries a real buyerId, conversion produces a `source: manual` order with `inquiryId` set while the
+inquiry lands `converted` with `convertedOrderId` back-referencing it, a second conversion attempt is
+rejected, marking an inquiry lost then blocks conversion, and a cross-store id returns not-found on both
+convert and mark-lost) and `identity.int-spec.ts`'s two new cases (a passwordless, Google-less guest buyer
+created via `BuyerDirectoryService` can claim their account through `/lupa-password`; a Google-only user with
+no password is not offered a reset token — the security property the guest-buyer exception was scoped to
+protect). `ordering.int-spec.ts`, `storefront.int-spec.ts` (now asserting `hasWhatsapp` in the public field
+set), `store.int-spec.ts`, `administration.int-spec.ts`, `tenant-isolation.int-spec.ts`, `ledger.int-spec.ts`,
+`payouts.int-spec.ts`, `invoicing.int-spec.ts`, `crm.int-spec.ts`, `reporting.int-spec.ts`, and
+`notifications.int-spec.ts` all still pass after adding `inquiry` to every suite's cleanup chain (the same
+class of RESTRICT-FK gap Sprints 7 and 8 both hit and fixed identically). `catalog.int-spec.ts` (5 failures)
+and `ordering.int-spec.ts`'s original checkout test (1 failure) are the same pre-existing environmental
+failures flagged in every sprint since 5 — this environment's `.env` carries real-looking
+`SUPABASE_URL`/`MIDTRANS_SERVER_KEY` values that select the real adapters over the null/stub ones; unrelated
+to this sprint's code. `pnpm run lint`, `pnpm run typecheck`, and `pnpm run build` are clean for `apps/api`
+and `web`; `next build` prerenders all four new routes.
+
+A live smoke test booted the real API and worker against Docker Postgres/Redis (no Midtrans/Supabase
+credentials needed — a physical product needs no file upload, and a manual order issues no Snap token) and
+drove the full path end to end over real HTTP: registered and logged in a seller, created a store, set a
+WhatsApp number, published a physical product, then — anonymously, no auth header — created an inquiry and
+got back `https://wa.me/628123456789?text=Halo%20Toko...` with the product name correctly prefilled; a
+repeat call with the same dedup token returned the identical inquiry id; the seller's `GET /inquiries` showed
+it; converting it with a price override (`Rp140.000` against a `Rp150.000` list price, qty 2) produced an
+order totalling `Rp280.000` with the override honored, not the list price; confirming payment moved
+`pending_payment → paid` (actor `seller`) `→ holding` (actor `system`) with a 3-day `holding_until`
+(physical risk tier); and the `ordering.order_paid` outbox event — once a real DI gap below was fixed — fanned
+out to all four Sprint 5/6 consumers for a Path B order exactly as it does for a self-checkout one:
+`balance_transactions` credited `Rp266.000` (280.000 minus the 5% fee) to holding, `invoices` allocated
+`INV-00001`, `store_buyers` upserted with `total_spent = 280000`, and the `inquiry_received` email was
+dispatched and marked `sent`. The public storefront and product pages were confirmed live in the browser dev
+server (`next dev`): `hasWhatsapp` gates the Tanya button's visibility, and the button opens the wa.me link
+in a new tab. Also verified: the seller order list's `status`/`source` query params round-trip through
+Postgres without an enum/text comparison error — the exact bug class that 500'd Sprint 7's admin queue, this
+time caught before shipping rather than by a live smoke test after.
+
+A real bug surfaced only by running the worker for real, not by any automated test: `CreateInquiryService`
+needs `CacheService` (for the dedup window), and `CacheModule` is `@Global()` but was only ever imported by
+`app.module.ts` (the HTTP entrypoint) — `worker.module.ts` never imported it, so it was never instantiated
+in the worker's module graph at all. Every existing `*.int-spec.ts` file happens to import `CacheModule`
+directly in its own `TestingModule`, which is exactly why no automated test caught this — the gap only exists
+in the real `WorkerModule` composition. Fixed by adding `CacheModule` to `worker.module.ts`'s imports,
+alongside `RedisModule`.
+
+Decisions and drift from the docs, recorded here rather than silently:
+- **WhatsApp channel is deep-link only this sprint.** No Fonnte/Wablas adapter — no provider account exists
+  in this environment, and `.docs/00-product-analysis.md §7` already flags the provider choice as an
+  unresolved cost/ToS bet. The `inquiry_received` notification goes by email instead
+  (`InquiryNotificationService`, mirroring `WithdrawalNotificationService`'s "lives in the owning module"
+  precedent); `NotificationChannel`'s port and `NotificationDispatcher`'s per-channel loop already support a
+  `'whatsapp'` channel type from Sprint 6, so adding a real adapter later is additive, not a redesign.
+- **`stores.whatsapp_number` is new, backed by a `Phone` value object** (`shared/kernel/value-objects/
+  phone.vo.ts`) that normalizes `08xx`/`62xx`/`+62xx` to a canonical `628xxxxxxxxxx`. Sprint 2 explicitly
+  deferred this VO "until the WhatsApp channel needs a real format check" — this is that point. The raw
+  number is never exposed on the public storefront response; `GET /storefront/:username` carries only a
+  `hasWhatsapp: boolean` (bumping `STOREFRONT_CACHE_VERSION` to `v3`), and the actual wa.me link is built
+  server-side, only at inquiry-creation time, by `CreateInquiryService`.
+- **A second, unplanned migration (013b) amends the Sprint 2 `users_has_login_method_check` constraint.**
+  `.docs/04-entity-design.md` and `.docs/06-database-roadmap.md` both document "a user must always retain at
+  least one login method" as a hard invariant — but a Path B buyer, resolved through the new
+  `BUYER_DIRECTORY` port (owned by ordering, implemented by identity's `BuyerDirectoryService`, same
+  dependency-inversion direction as `PAYMENT_GATEWAY`/`STORE_LOOKUP`), typically has never registered.
+  `User.registerAsGuestBuyer` creates a row with neither a password nor a Google id, which the original
+  constraint rejected outright — caught immediately by the integration suite once a real Postgres was
+  involved, not by typecheck. The exception is scoped narrowly (`... OR role = 'buyer'`): no code path ever
+  creates a seller or admin without a real login method, so the invariant still holds unconditionally for
+  those two roles. A second, related fix in the same vein: `AuthService.resetPassword` now also calls
+  `user.verifyEmailNow()` — completing a reset via a token emailed to that address is itself proof of mailbox
+  ownership, and without this a guest buyer (registered with `emailVerifiedAt: null`, no welcome email ever
+  sent) could reset a password they could then never use to log in, since `login()` requires a verified
+  email. `requestPasswordReset` itself still declines to issue a token for a Google-only user with no
+  password — that path stays an explicit-authenticated-action-only "set password" flow, not a reset backdoor.
+- **The public inquiry endpoint lives in `modules/ordering`, not `modules/storefront`, despite sitting on the
+  same `/storefront/:username/inquiries` path storefront's own read endpoints use** — a route's URL is
+  independent of which module serves it. The first attempt bolted it onto `StorefrontModule`, which pulled
+  ordering's entire write-side dependency graph (identity, payments, audit, notifications) into what had been
+  a deliberately lean, cache-optimized read module — `storefront.int-spec.ts` immediately failed to resolve
+  `AppJwtService` because its `TestingModule` had never needed `AppJwtModule` before. Reverted; the new
+  `PublicInquiriesController` lives in `modules/ordering/presentation/http/` instead, alongside the owning
+  context's other controllers.
+- **`JwtAuthGuard` now attempts best-effort verification on `@Public()` routes.** Previously a public route
+  never touched `request.user` at all. Now, if a bearer token happens to be present, the guard verifies it
+  and populates `request.user`, swallowing any failure rather than rejecting the request — this is what lets
+  a logged-in storefront visitor's inquiry carry a real `buyerId` without a second authenticated-vs-anonymous
+  code path, and without trusting a client-supplied id.
+- **Manual order creation reuses `MarkOrderPaidService` for payment confirmation rather than duplicating the
+  holding-period computation.** `ConfirmManualPaymentService` is a thin wrapper: it checks `belongsToStore`
+  (404, not 403 — the same information-hiding precedent as `ReleaseOrderService`) and `source.value ===
+  'manual'`, then delegates to `MarkOrderPaidService.execute(...)` with a new optional `actor` parameter
+  (defaulting to the system actor for the webhook path, unchanged). `pending_payment → paid` was already
+  legal for a `seller` actor in `OrderTransitionPolicy` — no state-machine change was needed.
+- **`OrderFactory.fromManualCreation` converges on the same `Order.create()` call as `fromCheckout`**, exactly
+  as the factory's own Sprint 5 comment anticipated. Each line's snapshot uses a seller-supplied
+  `priceOverride` when present, the product's own price otherwise; a below-HPP override is accepted without
+  complaint — `MarginWarning` (Sprint 10) is advisory only, and nothing in this sprint blocks on it.
+- **Inquiry conversion is two-phase, not one transaction**, the same tradeoff Sprint 6's invoice generation
+  made deliberately: `ConvertInquiryService` creates the manual order (which commits in its own transaction,
+  including the outbox write) and only then calls `Inquiry.convert(order.id)` in a second transaction. A crash
+  between the two would leave a real order with a still-`open` inquiry — recoverable, not a money-correctness
+  issue, and recorded here rather than silently accepted.
+- **`GET /inquiries/:id` (single-inquiry detail) was not built.** The list view carries enough
+  (`productName`, `buyerName`/`buyerEmail`, `status`, `createdAt`) to drive the convert and mark-lost actions
+  inline, and nothing in this sprint's frontend needs a dedicated detail route.
+- **`GET /orders/:id/history` was not built as a separate endpoint.** `OrderDetailResponseDto` already
+  embeds the full `statusHistory` array, so a second round trip for the same data seemed like the wrong
+  default; the seller order detail page's `Timeline` component reads it from the one response.
+- **The seller order list's cursor-paginated `GET /orders` and its `status`/`source` filters follow the
+  buyers-list precedent exactly** (`shared/kernel/cursor.ts`, `(created_at, id)` tiebreaker) — with the
+  status/source columns cast on the column side (`o.status::text = $1`), not the parameter side, specifically
+  because casting the parameter is the exact mistake that 500'd Sprint 7's admin withdrawal queue. A test
+  that passes a status filter exists this time (`listForStore` in `ordering.int-spec.ts` and the live smoke
+  test above), which is what Sprint 7 was missing.
+- **`ProductSelect` is a plain non-searching dropdown**, not a search-as-you-type combobox — a seller's
+  active catalog is small enough at pilot scale (1–3 sellers) that this isn't yet a usability problem. Listed
+  in `.docs/11-frontend.md` §3 alongside `PhoneInput` and `Timeline`; all three ship this sprint, `Timeline`
+  as a plain vertical status list rather than a richer visual treatment.
+- **`useCreateManualOrder`/inquiry conversion invalidate the whole `store-orders`/`inquiries` query key
+  namespaces on success** rather than surgically patching the cache — matches this codebase's existing
+  mutation-hook precedent (`useConfirmPayment`/`useCancelOrder`/`useReleaseOrder` do the same) over a more
+  precise but more fragile manual cache update.
+
+Not done, and cut deliberately rather than silently: a real Fonnte/Wablas adapter (deep link only, as noted
+above); server-side column sorting or URL-synced filter state on the new `/dashboard/pesanan` list (matches
+`/dashboard/pembeli`'s own Sprint 6 cut); a full authenticated-browser screenshot pass of the new dashboard
+pages — the live smoke test verified them through their real APIs and confirmed the pages build/typecheck/
+render structurally, but `/dashboard/*` sits behind the proxy middleware's cookie-based auth, which a
+curl-only smoke test can't carry across a redirect the way a real browser session would.
 
 ### Checkpoint MVP - Sprint 9.5
 - [ ] Production Midtrans account, live keys, production webhook URL
@@ -1037,13 +1176,16 @@ Decisions and drift from the docs, recorded here rather than silently:
 - [x] `OrderTransitionPolicy` as a data table
 - [x] `HoldingPeriodCalculator` (max risk tier + Midtrans floor)
 - [x] `OrderPricingService`
-- [x] `OrderFactory` (checkout only — manual creation is Sprint 9)
-- [ ] `Inquiry` aggregate — Sprint 9
+- [x] `OrderFactory` (`fromCheckout` Sprint 5, `fromManualCreation` Sprint 9 — both converge on the same
+  private `Order.create()`)
+- [x] `Inquiry` aggregate — Sprint 9
 - [x] Application services for the transitions this sprint calls: `CheckoutService`, `MarkOrderPaidService`,
   `CancelOrderService`, `ExpireOrderService` (not one handler per transition — see the module's
-  `application/services/` convention, matching the rest of the codebase's style, not a CQRS command bus)
-- [x] `OrderReadRepository` with raw SQL (buyer-facing list only; the seller-facing list is deferred with
-  `/dashboard/pesanan`)
+  `application/services/` convention, matching the rest of the codebase's style, not a CQRS command bus).
+  Sprint 9 adds `CreateManualOrderService`, `ConfirmManualPaymentService`, `CreateInquiryService`,
+  `ConvertInquiryService`, `MarkInquiryLostService`
+- [x] `OrderReadRepository` with raw SQL — buyer-facing list from Sprint 5; the seller-facing
+  `/dashboard/pesanan` list (`listForStore`, cursor paginated) is Sprint 9
 
 **Payments**
 - [x] Midtrans Snap client (Core API / refunds deferred to when refunds ship, Sprint 11)
@@ -1074,8 +1216,9 @@ Decisions and drift from the docs, recorded here rather than silently:
 - [x] Digital delivery service, signed URL issuer, download policy
 - [x] `StoreBuyer` service with recompute-on-event (`StoreBuyerService.upsertFromPaidOrder`)
 - [ ] `Promotion` aggregate, validator, calculator — Sprint 10
-- [x] `NotificationChannel` port, email adapter, dispatcher — WhatsApp adapter is Sprint 9; the port
-  and dispatch loop already support a second channel
+- [x] `NotificationChannel` port, email adapter, dispatcher — a real WhatsApp adapter (Fonnte/Wablas) stays
+  deferred (no provider account exists); Sprint 9 adds `inquiry_received` as an email template instead. The
+  port and dispatch loop already support a `'whatsapp'` channel type
 - [x] `AuditLogPort` + service (`AuditService`, standalone `AuditModule`) — writes from ledger, store,
   catalog, ordering
 - [ ] Reporting read repositories — Sprint 12/13
@@ -1099,16 +1242,19 @@ Decisions and drift from the docs, recorded here rather than silently:
   inherently one-at-a-time for a solo operator; see that sprint's drift notes)
 - [x] `EmptyState` / `ErrorState` / skeleton set
 - [x] `MoneyDisplay`, `MoneyInput` (bigint-safe)
-- [x] `OrderStatusBadge`, `HoldingCountdown`, `BalanceCard` — `HoldingCountdown`'s per-order release
-  reason is a static explanation, not derived per order (see this sprint's drift notes); `Timeline`
-  still waits for a seller order-detail page
-- [x] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput` — `ImageUploader` genericized
-  in Sprint 4 (was hardcoded to `Store`); `FileUploader` done; `PhoneInput` lands with Sprint 9
-- [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — Beli now creates a real order and
-  redirects to checkout; Tanya stays inert until Sprint 9 as documented
+- [x] `OrderStatusBadge`, `HoldingCountdown`, `BalanceCard`, `Timeline` — `HoldingCountdown`'s per-order
+  release reason is a static explanation, not derived per order (see Sprint 6's drift notes); `Timeline`
+  (Sprint 9) is a plain vertical status-history list, not a richer visual treatment
+- [x] `ImageUploader`, `FileUploader`, `UsernameInput`, `PhoneInput`, `ProductSelect` — `ImageUploader`
+  genericized in Sprint 4 (was hardcoded to `Store`); `FileUploader` done; `PhoneInput`/`ProductSelect`
+  land with Sprint 9 (`ProductSelect` is a plain dropdown, not a search-as-you-type combobox)
+- [x] Storefront pages (SSR), product page, `BuyWhatsAppButtons` — Beli creates a real order and redirects
+  to checkout; Tanya (Sprint 9) creates an inquiry and opens the resulting wa.me link, gated on the store
+  having a WhatsApp number set
 - [x] Checkout + Snap integration + status polling
-- [ ] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko`, `pengaturan`,
-  `keuangan` (+ `penarikan`, `rekening`), `pembeli`, `invoice` done; seller order pages still land later
+- [x] Every dashboard page from [11 §2](./11-frontend.md#2-page-inventory) — `toko`, `pengaturan`,
+  `keuangan` (+ `penarikan`, `rekening`), `pembeli`, `invoice` done; Sprint 9 adds `pesanan` (list +
+  detail), `pesanan/manual`, `pesanan/pertanyaan`
 - [x] Buyer `/akun` pages — order history, order detail, downloads; profile settings still a placeholder
 - [x] Admin pages — `/admin` (metrics), `/admin/penarikan` (queue); `/admin/sengketa`, `/admin/rekonsiliasi`,
   `/admin/toko`, `/admin/pengguna`, `/admin/audit` stay Sprint 11/12 placeholders in the sidebar

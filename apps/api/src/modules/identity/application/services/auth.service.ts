@@ -166,7 +166,14 @@ export class AuthService {
     const emailResult = Email.create(email);
     if (emailResult.isErr()) return;
     const user = await this.users.findByEmail(emailResult.unwrap().value);
-    if (!user || !user.passwordHash) return;
+    if (!user) return;
+    // A user with a Google-only login and no password never had one to
+    // reset — adding a password is the explicit-authenticated-action-only
+    // set-password flow (.docs/07-auth.md §1b), not a password-reset
+    // backdoor into a Google account. The one exception is a true guest —
+    // no password AND no Google id, created only via a Sprint 9 manual
+    // order — for whom this is the sole path to claiming their account.
+    if (!user.passwordHash && user.googleId) return;
 
     const tokenPlain = generateOpaqueToken();
     const token = VerificationToken.issue({
@@ -206,6 +213,12 @@ export class AuthService {
 
     await this.transactionManager.runInTransaction(async () => {
       user.setPasswordHash(passwordHashResult.unwrap());
+      // Completing a reset via a token emailed to this address is itself
+      // proof of mailbox ownership — at least as strong as clicking a
+      // verification link. Without this, a Sprint 9 guest buyer (registered
+      // with emailVerifiedAt: null, no welcome/verification email ever
+      // sent) could reset a password they could then never use to log in.
+      user.verifyEmailNow();
       token.markUsed();
       await this.users.save(user);
       await this.verificationTokens.save(token);

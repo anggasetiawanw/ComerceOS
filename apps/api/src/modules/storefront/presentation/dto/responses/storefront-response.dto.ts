@@ -11,6 +11,7 @@ export class StorefrontResponseDto {
   bannerUrl!: string | null;
   theme!: Record<string, string> | null;
   plan!: string;
+  hasWhatsapp!: boolean;
   socialLinks!: StorefrontSocialLinkResponseDto[];
   products!: StorefrontProductResponseDto[];
 
@@ -24,6 +25,7 @@ export class StorefrontResponseDto {
     dto.bannerUrl = result.bannerUrl;
     dto.theme = result.theme;
     dto.plan = result.plan;
+    dto.hasWhatsapp = result.hasWhatsapp;
     dto.socialLinks = result.socialLinks.map((link) => StorefrontSocialLinkResponseDto.fromResult(link));
     dto.products = result.products.map((product) => StorefrontProductResponseDto.fromResult(product));
     return dto;

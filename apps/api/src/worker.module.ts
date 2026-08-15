@@ -3,6 +3,7 @@ import { AppConfigModule } from './shared/config/app-config.module';
 import { LoggerModule } from './shared/observability/logger.module';
 import { PrismaModule } from './shared/infrastructure/prisma/prisma.module';
 import { RedisModule } from './shared/infrastructure/redis/redis.module';
+import { CacheModule } from './shared/infrastructure/cache/cache.module';
 import { EventsModule } from './shared/infrastructure/events/events.module';
 import { StorageModule } from './shared/infrastructure/storage/storage.module';
 import { AppJwtModule } from './shared/security/jwt.module';
@@ -29,6 +30,7 @@ import { NotificationsJobsModule } from './modules/notifications/notifications-j
     LoggerModule,
     PrismaModule,
     RedisModule,
+    CacheModule,
     EventsModule,
     StorageModule,
     AppJwtModule,

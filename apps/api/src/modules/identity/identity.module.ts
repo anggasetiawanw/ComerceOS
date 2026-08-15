@@ -5,6 +5,7 @@ import { StoreLookupService } from '../store/application/services/store-lookup.s
 import { AuthService } from './application/services/auth.service';
 import { AccountLinkingApplicationService } from './application/services/account-linking-application.service';
 import { UserProfileService } from './application/services/user-profile.service';
+import { BuyerDirectoryService } from './application/services/buyer-directory.service';
 import { TokenRotationService } from './domain/services/token-rotation.service';
 import { USER_REPOSITORY } from './domain/repositories/user.repository';
 import { REFRESH_TOKEN_REPOSITORY } from './domain/repositories/refresh-token.repository';
@@ -29,6 +30,7 @@ import { UsersController } from './presentation/http/users.controller';
     AuthService,
     AccountLinkingApplicationService,
     UserProfileService,
+    BuyerDirectoryService,
     TokenRotationService,
     { provide: USER_REPOSITORY, useClass: UserPrismaRepository },
     { provide: REFRESH_TOKEN_REPOSITORY, useClass: RefreshTokenPrismaRepository },
@@ -38,6 +40,6 @@ import { UsersController } from './presentation/http/users.controller';
     { provide: EMAIL_SENDER, useClass: ResendEmailSenderService },
     { provide: STORE_LOOKUP, useExisting: StoreLookupService },
   ],
-  exports: [USER_REPOSITORY],
+  exports: [USER_REPOSITORY, BuyerDirectoryService],
 })
 export class IdentityModule {}

@@ -3,6 +3,7 @@ import { Result } from '../../../../shared/kernel/result';
 import { TransactionManager } from '../../../../shared/infrastructure/prisma/transaction.manager';
 import { DomainEventPublisher } from '../../../../shared/infrastructure/events/domain-event-publisher';
 import { Username, UsernameError } from '../../../../shared/kernel/value-objects/username.vo';
+import { Phone, PhoneError } from '../../../../shared/kernel/value-objects/phone.vo';
 import { Store } from '../../domain/entities/store.aggregate';
 import { StoreProfile, StoreProfileError } from '../../domain/value-objects/store-profile.vo';
 import { STORE_REPOSITORY, StoreRepository } from '../../domain/repositories/store.repository';
@@ -24,7 +25,7 @@ import {
 } from '../ports/username-reservation-store.port';
 
 type CreateStoreError = StoreAlreadyExistsError | InvalidUsernameError | UsernameReservedError | UsernameTakenError;
-type UpdateProfileError = StoreNotFoundError | StoreProfileError;
+type UpdateProfileError = StoreNotFoundError | StoreProfileError | PhoneError;
 type ChangeUsernameError =
   | StoreNotFoundError
   | UsernameChangeCooldownError
@@ -101,6 +102,7 @@ export class StoreService {
       bio?: string | null;
       avatarUrl?: string | null;
       bannerUrl?: string | null;
+      whatsappNumber?: string | null;
     },
   ): Promise<Result<Store, UpdateProfileError>> {
     const store = await this.stores.findByOwnerId(ownerId);
@@ -114,7 +116,19 @@ export class StoreService {
     });
     if (profileResult.isErr()) return Result.err(profileResult.unwrapErr());
 
+    let whatsappNumber = store.whatsappNumber;
+    if (params.whatsappNumber !== undefined) {
+      if (params.whatsappNumber === null) {
+        whatsappNumber = null;
+      } else {
+        const phoneResult = Phone.create(params.whatsappNumber);
+        if (phoneResult.isErr()) return Result.err(phoneResult.unwrapErr());
+        whatsappNumber = phoneResult.unwrap();
+      }
+    }
+
     store.updateProfile(profileResult.unwrap());
+    store.changeWhatsappNumber(whatsappNumber);
 
     await this.transactionManager.runInTransaction(() => this.stores.save(store));
     await this.events.publishAll(store.pullDomainEvents());

@@ -66,3 +66,12 @@ export interface DispatchWithdrawalNotificationJob {
   template: 'withdrawal_requested' | 'withdrawal_paid' | 'withdrawal_rejected';
   reason?: string | null;
 }
+
+// Outbox-routed from ordering.inquiry_created — forwarded verbatim from
+// InquiryCreatedEvent.toPayload().
+export interface DispatchInquiryNotificationJob {
+  inquiryId: string;
+  storeId: string;
+  productId: string | null;
+  buyerId: string | null;
+}

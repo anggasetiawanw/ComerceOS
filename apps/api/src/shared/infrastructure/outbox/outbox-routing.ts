@@ -81,4 +81,13 @@ export const OUTBOX_ROUTES: Readonly<Partial<Record<string, readonly OutboxRoute
       opts: { attempts: 5, backoff: { type: 'exponential', delay: 30_000 } },
     },
   ],
+  // Sprint 9 — Path B. The seller's real inbox is the dashboard inquiry
+  // list; this email is a best-effort nudge, so a modest retry budget.
+  [ORDERING_EVENT_NAMES.INQUIRY_CREATED]: [
+    {
+      queue: QUEUE_NAMES.NOTIFICATION,
+      jobName: JOB_NAMES.DISPATCH_INQUIRY_NOTIFICATION,
+      opts: { attempts: 3, backoff: { type: 'exponential', delay: 30_000 } },
+    },
+  ],
 };

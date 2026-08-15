@@ -36,8 +36,10 @@ const ProductPage = async ({ params }: ProductPageProps) => {
   const { username, slug } = await params;
 
   let product;
+  let hasWhatsapp = false;
   try {
     product = await storefrontApi.getProduct(username, slug);
+    hasWhatsapp = (await storefrontApi.getByUsername(username)).hasWhatsapp;
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     throw error;
@@ -56,7 +58,7 @@ const ProductPage = async ({ params }: ProductPageProps) => {
           <p className="whitespace-pre-line text-sm text-muted-foreground">{product.description}</p>
         )}
       </div>
-      <BuyWhatsappButtons productId={product.id} />
+      <BuyWhatsappButtons productId={product.id} username={username} hasWhatsapp={hasWhatsapp} />
     </div>
   );
 };

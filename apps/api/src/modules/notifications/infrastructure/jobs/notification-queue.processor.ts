@@ -2,13 +2,20 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { JOB_NAMES, QUEUE_NAMES } from '../../../../shared/infrastructure/queue/queue.constants';
-import { DispatchWithdrawalNotificationJob, SendEmailJob } from '../../../../shared/infrastructure/queue/job-payloads';
+import {
+  DispatchInquiryNotificationJob,
+  DispatchWithdrawalNotificationJob,
+  SendEmailJob,
+} from '../../../../shared/infrastructure/queue/job-payloads';
 import { SendEmailService } from '../../application/services/send-email.service';
 import { WithdrawalNotificationService } from '../../../ledger/application/services/withdrawal-notification.service';
+import { InquiryNotificationService } from '../../../ordering/application/services/inquiry-notification.service';
 
-type NotificationJobData = SendEmailJob | DispatchWithdrawalNotificationJob;
+type NotificationJobData = SendEmailJob | DispatchWithdrawalNotificationJob | DispatchInquiryNotificationJob;
 
 const isSendEmailJob = (data: NotificationJobData): data is SendEmailJob => 'deliveryId' in data;
+const isDispatchWithdrawalJob = (data: NotificationJobData): data is DispatchWithdrawalNotificationJob =>
+  'withdrawalId' in data;
 
 // @nestjs/bullmq creates one Worker per @Processor-decorated class — two
 // classes on the same queue name would compete for jobs regardless of job
@@ -24,6 +31,7 @@ export class NotificationQueueProcessor extends WorkerHost {
   constructor(
     private readonly sendEmail: SendEmailService,
     private readonly withdrawalNotifications: WithdrawalNotificationService,
+    private readonly inquiryNotifications: InquiryNotificationService,
   ) {
     super();
   }
@@ -39,11 +47,19 @@ export class NotificationQueueProcessor extends WorkerHost {
         return;
       }
       case JOB_NAMES.DISPATCH_WITHDRAWAL_NOTIFICATION: {
-        if (isSendEmailJob(job.data)) {
+        if (!isDispatchWithdrawalJob(job.data)) {
           this.logger.warn(`Job "${job.id}" named "${job.name}" has an unexpected payload shape`);
           return;
         }
         await this.withdrawalNotifications.dispatch(job.data);
+        return;
+      }
+      case JOB_NAMES.DISPATCH_INQUIRY_NOTIFICATION: {
+        if (isSendEmailJob(job.data) || isDispatchWithdrawalJob(job.data)) {
+          this.logger.warn(`Job "${job.id}" named "${job.name}" has an unexpected payload shape`);
+          return;
+        }
+        await this.inquiryNotifications.dispatch(job.data);
         return;
       }
       default:

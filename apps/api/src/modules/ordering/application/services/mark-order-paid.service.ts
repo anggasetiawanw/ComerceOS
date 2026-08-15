@@ -17,6 +17,12 @@ export interface MarkOrderPaidInput {
   method: string;
   transactionId: string | null;
   paidAt?: Date;
+  // Defaults to the system actor (webhook-driven settlement). A manual
+  // Path B confirmation passes the seller who clicked "confirm payment"
+  // (.docs/12-roadmap-sprints.md Sprint 9) — the pending_payment -> paid
+  // transition is already legal for a seller actor
+  // (order-transition.policy.ts), so no policy change was needed.
+  actor?: StatusChangeActor;
 }
 
 type MarkOrderPaidError = OrderNotFoundError | StoreNotFoundForOrderError | IllegalTransitionError;
@@ -60,7 +66,7 @@ export class MarkOrderPaidService {
         method: params.method,
         transactionId: params.transactionId,
         holdingUntil,
-        actor: StatusChangeActor.system(),
+        actor: params.actor ?? StatusChangeActor.system(),
       });
       if (result.isErr()) return Result.err(result.unwrapErr());
 

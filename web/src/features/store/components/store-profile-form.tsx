@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FormField } from '@/components/forms/form-field';
+import { PhoneInput } from '@/components/forms/phone-input';
 import { ApiError } from '@/lib/api/client';
 import { useUpdateStoreProfile } from '../hooks/use-update-store-profile';
 import { storeProfileSchema, type StoreProfileInput } from '../schemas/store.schemas';
@@ -19,18 +20,27 @@ export const StoreProfileForm = ({ store }: { store: Store }) => {
   const updateProfile = useUpdateStoreProfile();
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<StoreProfileInput>({
     resolver: zodResolver(storeProfileSchema),
-    defaultValues: { displayName: store.displayName, bio: store.bio ?? '' },
+    defaultValues: {
+      displayName: store.displayName,
+      bio: store.bio ?? '',
+      whatsappNumber: store.whatsappNumber ?? '',
+    },
   });
 
   const onSubmit = async (values: StoreProfileInput) => {
     setFormError(null);
     setSaved(false);
     try {
-      await updateProfile.mutateAsync({ displayName: values.displayName, bio: values.bio || null });
+      await updateProfile.mutateAsync({
+        displayName: values.displayName,
+        bio: values.bio || null,
+        whatsappNumber: values.whatsappNumber || null,
+      });
       setSaved(true);
     } catch (error) {
       setFormError(error instanceof ApiError ? error.problem.detail : 'Terjadi kesalahan, coba lagi.');
@@ -54,6 +64,18 @@ export const StoreProfileForm = ({ store }: { store: Store }) => {
       </FormField>
       <FormField label="Bio" htmlFor="bio" error={errors.bio}>
         <Textarea id="bio" rows={4} {...register('bio')} />
+      </FormField>
+      <FormField label="Nomor WhatsApp" htmlFor="whatsappNumber" error={errors.whatsappNumber}>
+        <Controller
+          control={control}
+          name="whatsappNumber"
+          render={({ field }) => (
+            <PhoneInput id="whatsappNumber" value={field.value ?? ''} onChange={field.onChange} />
+          )}
+        />
+        <p className="text-xs text-muted-foreground">
+          Dipakai untuk tombol Tanya di halaman produk. Kosongkan untuk menyembunyikannya.
+        </p>
       </FormField>
       <Button type="submit" disabled={isSubmitting} className="self-start">
         Simpan

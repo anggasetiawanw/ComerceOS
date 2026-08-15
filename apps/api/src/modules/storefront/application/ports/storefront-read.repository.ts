@@ -27,6 +27,7 @@ export interface StorefrontStoreRow {
   bannerUrl: string | null;
   theme: unknown;
   plan: string;
+  whatsappNumber: string | null;
   socialLinks: StorefrontSocialLinkRow[];
   products: StorefrontProductRow[];
 }
